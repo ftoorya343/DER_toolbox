@@ -11,6 +11,8 @@ To Do:
 import requests as req
 import numpy as np
 import pandas as pd
+import codecs
+import json
 
 
 #%%
@@ -55,11 +57,18 @@ class Tariff:
     -e_max_difference  
     -energy_rate_unit: kWh or kWh/day - for guiding the bill calculations later
     -demand_rate_unit: kW or kW/day - for guiding the bill calculations later
+    
+    
+    To Do
+    -peak_kW_capacity and other scalar variables may be being imported as tuples
     """
         
-    def __init__(self, urdb_id=None):
+    def __init__(self, urdb_id=None, json=None):
                    
-            
+        #######################################################################
+        ##### If given no urdb id or csv file name, create blank tariff #######
+        #######################################################################
+                   
         if urdb_id==None:
             # Default values for a blank tariff
             self.urdb_id = 'No urdb id given'               
@@ -109,6 +118,7 @@ class Tariff:
             self.d_wkday_12by24 = np.zeros([12,24], int)
             self.d_wkend_12by24 = np.zeros([12,24], int)
             
+            
             ################### Blank 12x24s as 8760s Schedule ########################
             self.d_tou_8760 = np.zeros(8760, int)
             self.e_tou_8760 = np.zeros(8760, int)
@@ -119,8 +129,10 @@ class Tariff:
             self.e_max_difference = np.max(self.e_prices) - np.min(self.e_prices)
 
         #%%
-        # If given a urdb_id input argument, obtain and reshape that tariff through the URDB API      
-        else:
+        #######################################################################
+        # If given a urdb_id input argument, obtain and reshape that tariff through the URDB API 
+        #######################################################################
+        elif urdb_id != None:
             input_params = {'version':3,
                         'format':'json',
                         'detail':'full',
@@ -314,6 +326,39 @@ class Tariff:
             self.e_prices_no_tier = np.max(self.e_prices, 0)
             self.e_max_difference = np.max(self.e_prices) - np.min(self.e_prices)
 
+        
+        #######################################################################
+        # If given a json input argument, construct a tariff from that file
+        #######################################################################    
+        elif json != None:
+            
+            obj_text = codecs.open('result.json', 'r', encoding='utf-8').read()
+            d = json.loads(obj_text)
+            for fieldname in d.keys():
+                if isinstance(d[fieldname], list):
+                    d[fieldname] = np.array(d[fieldname])
+                self[fieldname] = d[fieldname]
+    
+        #######################################################################
+        # Write the current class object to a json file
+        #######################################################################     
+    def write_json(self, json_file_name):
+        
+        d = self.__dict__
+                
+        d_prep_for_json = d.copy()
+        
+        # change ndarray dtypes to lists, since json doesn't know ndarrays
+        for fieldname in d_prep_for_json.keys():
+            print fieldname
+            if isinstance(d_prep_for_json[fieldname], np.ndarray):
+                d_prep_for_json[fieldname] = d_prep_for_json[fieldname].tolist()
+        
+        with open(json_file_name, 'w') as fp:
+            json.dump(d_prep_for_json, fp)
+            
+                   
+
 #%%
 def tiered_calc_vec(values, levels, prices):
     # Vectorized piecewise function calculator
@@ -505,16 +550,4 @@ class export_tariff:
     periods_8760 = np.zeros(8760, int)
     period_tou_n = 1
     
-#%%
-    
-tariff_object = Tariff('57bcd2b65457a3a67e540154')
 
-load_profile = np.genfromtxt('large_office_profile.csv')
-pv_profile = np.genfromtxt('pv_profile.csv')
-
-net_profile = load_profile - 500*pv_profile
-
-bill, results = bill_calculator(net_profile, tariff_object, export_tariff)
-
-
-print "Total bill: $", bill
