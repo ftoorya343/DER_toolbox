@@ -35,16 +35,16 @@ class Tariff:
     -uri: link the the urdb page
     -voltage_category: secondary, primary, transmission        
     -d_flat_exists: Boolean of whether there is a flat (not tou) demand charge component. Flat demand is also called monthly or seasonal demand. 
-    -d_flat_n: Number of unique flat demand period constructions
-    -d_flat_prices: The prices of each tier/period combination for flat demand. Rows are tiers, columns are periods.
-    -d_flat_levels: The limit (total kW) of each of each tier/period combination for flat demand. Rows are tiers, columns are periods.
+    -d_flat_n: Number of unique flat demand period constructions. Does NOT correspond to width of d_flat_x constructs.
+    -d_flat_prices: The prices of each tier/period combination for flat demand. Rows are tiers, columns are months. Differs from TOU, where columns are periods.
+    -d_flat_levels: The limit (total kW) of each of each tier/period combination for flat demand. Rows are tiers, columns are months. Differs from TOU, where columns are periods.
     -d_tou_exists = Boolean of whether there is a tou (not flat) demand charge component
-    -d_tou_n = Number of unique tou demand periods
+    -d_tou_n = Number of unique tou demand periods. Minimum of 1, since I'm counting no-charge periods still as a period.
     -d_tou_prices = The prices of each tier/period combination for tou demand. Rows are tiers, columns are periods.    
     -d_tou_levels = The limit (total kW) of each of each tier/period combination for tou demand. Rows are tiers, columns are periods.
     -e_exists = Boolean of whether there is a flat (not tou) demand charge component
     -e_tou_exists = Boolean of whether there is a flat (not tou) demand charge component
-    -e_n = Number of unique energy periods
+    -e_n = Number of unique energy periods. Minimum of 1, since I'm counting no-charge periods still as a period.
     -e_prices = The prices of each tier/period combination for flat demand. Rows are tiers, columns are periods.    
     -e_levels = The limit (total kWh) of each of each tier/period combination for energy. Rows are tiers, columns are periods.
     -e_wkday_12by24: 12 by 24 period definition for weekday energy. Rows are months, columns are hours.
@@ -60,30 +60,31 @@ class Tariff:
     
     
     To Do
-    -peak_kW_capacity and other scalar variables may be being imported as tuples
+    -peak_kW_capacity and other scalar variables may be being imported as tuples.
+     this may have been solved now, but general unit check would be good.
     """
         
-    def __init__(self, urdb_id=None, json=None):
+    def __init__(self, urdb_id=None, json_file_name=None):
                    
         #######################################################################
         ##### If given no urdb id or csv file name, create blank tariff #######
         #######################################################################
                    
-        if urdb_id==None:
+        if urdb_id==None and json_file_name==None:
             # Default values for a blank tariff
             self.urdb_id = 'No urdb id given'               
             self.name = 'User defined tariff - no name specified'
             self.utility = 'User defined tariff - no name specified'
             self.fixed_charge = 0
-            self.peak_kW_capacity_max = 1e99,
-            self.peak_kW_capacity_min = 0,
-            self.kWh_useage_max = 1e99,
-            self.kWh_useage_min = 0,
-            self.sector = 'No sector specified',
-            self.comments = 'No comments given',
-            self.description = 'No description given',
-            self.source = 'No source given',
-            self.uri = 'No uri given',
+            self.peak_kW_capacity_max = 1e99
+            self.peak_kW_capacity_min = 0
+            self.kWh_useage_max = 1e99
+            self.kWh_useage_min = 0
+            self.sector = 'No sector specified'
+            self.comments = 'No comments given'
+            self.description = 'No description given'
+            self.source = 'No source given'
+            self.uri = 'No uri given'
             self.voltage_category = 'No voltage category given' 
             self.eia_id = 'No eia id given' 
             self.demand_rate_unit = 'kW'
@@ -93,13 +94,14 @@ class Tariff:
             ###################### Blank Flat Demand Structure ########################
             self.d_flat_exists = False
             self.d_flat_n = 0
-            self.d_flat_prices = np.zeros([1, 1])     
-            self.d_flat_levels = np.zeros([1, 1])
+            self.d_flat_prices = np.zeros([1, 12])     
+            self.d_flat_levels = np.zeros([1, 12])
+            self.d_flat_levels[:,:] = 1e9
                 
             
             #################### Blank Demand TOU Structure ###########################
             self.d_tou_exists = False
-            self.d_tou_n = 0
+            self.d_tou_n = 1
             self.d_tou_prices = np.zeros([1, 1])     
             self.d_tou_levels = np.zeros([1, 1])
             
@@ -107,7 +109,7 @@ class Tariff:
             ######################## Blank Energy Structure ###########################
             self.e_exists = False
             self.e_tou_exists = False
-            self.e_n = 0
+            self.e_n = 1
             self.e_prices = np.zeros([1, 1])     
             self.e_levels = np.zeros([1, 1])
             
@@ -128,7 +130,7 @@ class Tariff:
             self.e_prices_no_tier = np.max(self.e_prices, 0) # simplification until something better is implemented
             self.e_max_difference = np.max(self.e_prices) - np.min(self.e_prices)
 
-        #%%
+        
         #######################################################################
         # If given a urdb_id input argument, obtain and reshape that tariff through the URDB API 
         #######################################################################
@@ -199,6 +201,7 @@ class Tariff:
             if 'flatdemandstructure' in tariff_original:
                 self.d_flat_exists = True
                 d_flat_structure = tariff_original['flatdemandstructure']
+                d_flat_month_indicies = tariff_original['flatdemandmonths']
                 self.d_flat_n = len(np.unique(tariff_original['flatdemandmonths']))
                 
                 # Determine the maximum number of tiers in the demand structure
@@ -208,19 +211,19 @@ class Tariff:
                     if n_tiers > max_tiers: max_tiers = n_tiers
                 
                 # Repackage Energy TOU Structure   
-                self.d_flat_prices = np.zeros([max_tiers, self.d_flat_n])     
-                self.d_flat_levels = np.zeros([max_tiers, self.d_flat_n])
+                self.d_flat_prices = np.zeros([max_tiers, 12])     
+                self.d_flat_levels = np.zeros([max_tiers, 12])
                 self.d_flat_levels[:,:] = 1e9
-                for period in range(self.d_flat_n):
+                for month in range(12):
                     for tier in range(len(d_flat_structure[period])):
-                        self.d_flat_levels[tier, period] = d_flat_structure[period][tier].get('max', 1e9)
-                        self.d_flat_prices[tier, period] = d_flat_structure[period][tier].get('rate', 0) + d_flat_structure[period][tier].get('adj', 0)
+                        self.d_flat_levels[tier, month] = d_flat_structure[d_flat_month_indicies[month]][tier].get('max', 1e9)
+                        self.d_flat_prices[tier, month] = d_flat_structure[d_flat_month_indicies[month]][tier].get('rate', 0) + d_flat_structure[d_flat_month_indicies[month]][tier].get('adj', 0)
             else:
                 self.d_flat_exists = False
-                self.d_flat_n = 0
-                self.d_flat_prices = np.zeros([1, 1])     
-                self.d_flat_levels = np.zeros([1, 1])
-                
+                self.d_flat_n = 1
+                self.d_flat_prices = np.zeros([1, 12])     
+                self.d_flat_levels = np.zeros([1, 12])
+                self.d_flat_levels[:,:] = 1e9
             
             #################### Repackage Demand TOU Structure ###########################
             if 'demandratestructure' in tariff_original:
@@ -247,7 +250,7 @@ class Tariff:
                         self.d_tou_prices[tier, period] = demand_structure[period][tier].get('rate', 0) + demand_structure[period][tier].get('adj', 0)
             else:
                 self.d_tou_exists = False
-                self.d_tou_n = 0
+                self.d_tou_n = 1
                 self.d_tou_prices = np.zeros([1, 1])     
                 self.d_tou_levels = np.zeros([1, 1])
             
@@ -330,18 +333,73 @@ class Tariff:
         #######################################################################
         # If given a json input argument, construct a tariff from that file
         #######################################################################    
-        elif json != None:
+        elif json_file_name != None:
             
-            obj_text = codecs.open('result.json', 'r', encoding='utf-8').read()
+            obj_text = codecs.open(json_file_name, 'r', encoding='utf-8').read()
             d = json.loads(obj_text)
             for fieldname in d.keys():
                 if isinstance(d[fieldname], list):
                     d[fieldname] = np.array(d[fieldname])
-                self[fieldname] = d[fieldname]
+                
+            self.urdb_id = d['urdb_id']             
+            self.name = d['name']
+            self.utility = d['utility']
+            self.fixed_charge = d['fixed_charge']
+            self.peak_kW_capacity_max = d['peak_kW_capacity_max']
+            self.peak_kW_capacity_min = d['peak_kW_capacity_min']
+            self.kWh_useage_max = d['kWh_useage_max']
+            self.kWh_useage_min = d['kWh_useage_min']
+            self.sector = d['sector']
+            self.comments = d['comments']
+            self.description = d['description']
+            self.source = d['source']
+            self.uri = d['uri']
+            self.voltage_category = d['voltage_category']
+            self.eia_id = d['eia_id']
+            self.demand_rate_unit = d['demand_rate_unit']
+            self.energy_rate_unit = d['energy_rate_unit']
+            
+            
+            ###################### Blank Flat Demand Structure ########################
+            self.d_flat_exists = d['d_flat_exists']
+            self.d_flat_prices = d['d_flat_prices'] 
+            self.d_flat_levels = d['d_flat_levels']
+            self.d_flat_n = d['d_flat_n']
+            
+            #################### Blank Demand TOU Structure ###########################
+            self.d_tou_exists = d['d_tou_exists']
+            self.d_tou_n = d['d_tou_n']
+            self.d_tou_prices = d['d_tou_prices']    
+            self.d_tou_levels = d['d_tou_levels']
+            
+            
+            ######################## Blank Energy Structure ###########################
+            self.e_exists = d['e_exists']
+            self.e_tou_exists = d['e_tou_exists']
+            self.e_n = d['e_n']
+            self.e_prices = d['e_prices']   
+            self.e_levels = d['e_levels']
+            
+                
+            ######################## Blank Schedules ###########################
+            self.e_wkday_12by24 = d['e_wkday_12by24']
+            self.e_wkend_12by24 = d['e_wkend_12by24']
+            self.d_wkday_12by24 = d['d_wkday_12by24']
+            self.d_wkend_12by24 = d['d_wkend_12by24']
+            
+            
+            ################### Blank 12x24s as 8760s Schedule ########################
+            self.d_tou_8760 = d['d_tou_8760']
+            self.e_tou_8760 = d['e_tou_8760']
+            
+            
+            ######################## Precalculations ######################################
+            self.e_prices_no_tier = d['e_prices_no_tier'] # simplification until something better is implemented
+            self.e_max_difference = d['e_max_difference']
     
-        #######################################################################
-        # Write the current class object to a json file
-        #######################################################################     
+    #######################################################################
+    # Write the current class object to a json file
+    #######################################################################     
     def write_json(self, json_file_name):
         
         d = self.__dict__
@@ -350,7 +408,6 @@ class Tariff:
         
         # change ndarray dtypes to lists, since json doesn't know ndarrays
         for fieldname in d_prep_for_json.keys():
-            print fieldname
             if isinstance(d_prep_for_json[fieldname], np.ndarray):
                 d_prep_for_json[fieldname] = d_prep_for_json[fieldname].tolist()
         

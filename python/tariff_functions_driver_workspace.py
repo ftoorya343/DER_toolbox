@@ -32,9 +32,9 @@ class export_tariff:
     
 tariff_object = tFuncs.Tariff('57bcd2b65457a3a67e540154')
 
-tariff_object.write_json('test_write.json')
+tariff_object.write_json('dummy_tariff.json')
 
-tariff2 = tFuncs.Tariff(json='test_write.json')
+#tariff2 = tFuncs.Tariff(json_file_name='dummy_tariff.json')
 
 #load_profile = np.genfromtxt('large_office_profile.csv')
 #pv_profile = np.genfromtxt('pv_profile.csv')
