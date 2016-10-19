@@ -114,7 +114,7 @@ def dispatch_pass_fail(load_profile, demand_periods_vector, targets, batt):
     poss_batt_level_change = demand_vector - load_profile
     poss_batt_level_change = [batt.power if s>batt.power else s for s in poss_batt_level_change] 
     poss_batt_level_change = [-batt.power if s<-batt.power else s for s in poss_batt_level_change] 
-    poss_batt_level_change = [s/batt.eta if s<0 else s*batt.eta for s in poss_batt_level_change]
+    poss_batt_level_change = [s/batt.eta_discharge if s<0 else s*batt.eta_charge for s in poss_batt_level_change]
     batt_e_level = batt.cap
     
     success = True
@@ -126,7 +126,7 @@ def dispatch_pass_fail(load_profile, demand_periods_vector, targets, batt):
     return success
 
 #%% Energy Arbitrage Value Estimator
-def calc_estimator_params(load_and_pv_profile, tariff, NEM_tariff, eta):
+def calc_estimator_params(load_and_pv_profile, tariff, NEM_tariff, eta_charge, eta_discharge):
     '''
     This function creates two 12x24 matrixes that are the marginal value of 
     energy (for each hour of each month) for the given load profile on the 
@@ -191,7 +191,7 @@ def calc_estimator_params(load_and_pv_profile, tariff, NEM_tariff, eta):
     return results
     
 #%%
-def estimate_annual_arbitrage_profit(power, capacity, eta, sorted_e_wkday_value, sorted_e_wkend_value):
+def estimate_annual_arbitrage_profit(power, capacity, eta_charge, eta_discharge, sorted_e_wkday_value, sorted_e_wkend_value):
 
     '''
     This function uses the 12x24 marginal energy costs from calc_estimator_params
@@ -224,15 +224,15 @@ def estimate_annual_arbitrage_profit(power, capacity, eta, sorted_e_wkday_value,
     #  and what the kWh consumption during those blocks will be
     # reduce capacity by eta, since this is essentially just estimating what can be discharged off a full battery
     
-    charge_blocks = np.zeros(int(np.floor(capacity/eta/power)+1))
-    charge_blocks[:-1] = np.tile(power,int(np.floor(capacity/eta/power)))
-    charge_blocks[-1] = np.mod(capacity/eta,power)
+    charge_blocks = np.zeros(int(np.floor(capacity/eta_charge/power)+1))
+    charge_blocks[:-1] = np.tile(power,int(np.floor(capacity/eta_charge/power)))
+    charge_blocks[-1] = np.mod(capacity/eta_charge,power)
     
     # Determine how many hour 'blocks' the battery will need to cover to discharge,
     #  and what the kWh discharged during those blocks will be
-    discharge_blocks = np.zeros(int(np.floor(capacity*eta/power)+1))
-    discharge_blocks[:-1] = np.tile(power,int(np.floor(capacity*eta/power)))
-    discharge_blocks[-1] = np.mod(capacity*eta,power)
+    discharge_blocks = np.zeros(int(np.floor(capacity*eta_discharge/power)+1))
+    discharge_blocks[:-1] = np.tile(power,int(np.floor(capacity*eta_discharge/power)))
+    discharge_blocks[-1] = np.mod(capacity*eta_discharge,power)
     
     # Determine the max revenue that can be collected by a complete discharge 
     #  into the most expensive hours. Determine the cost of charging from the 

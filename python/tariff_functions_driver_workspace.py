@@ -15,33 +15,43 @@ import tariff_functions as tFuncs
 
     
 
-#%%
 class export_tariff:
     """
     Structure of compensation for exported generation. Currently only two 
     styles: full-retail NEM, and instantanous TOU energy value. 
     """
      
-    full_retail_nem = True
-    prices = np.zeros([1, 1], int)     
-    levels = np.zeros([1, 1], int)
+    full_retail_nem = False
+    prices = np.zeros([1, 1], float)     
+    levels = np.zeros([1, 1], float)
     periods_8760 = np.zeros(8760, int)
     period_tou_n = 1
     
 #%%
     
-tariff_object = tFuncs.Tariff('57bcd2b65457a3a67e540154')
+tariff_object = tFuncs.Tariff('574dbcac5457a3d3795e629f')
 
-tariff_object.write_json('dummy_tariff.json')
+tariff_object.write_json('pge_e20.json')
 
-#tariff2 = tFuncs.Tariff(json_file_name='dummy_tariff.json')
+#%%
 
-#load_profile = np.genfromtxt('large_office_profile.csv')
-#pv_profile = np.genfromtxt('pv_profile.csv')
-#
-#net_profile = load_profile - 500*pv_profile
-#
-#bill, results = tFuncs.bill_calculator(net_profile, tariff_object, export_tariff)
-#
-#
-#print "Total bill: $", bill
+#tariff_object.d_flat_prices = np.zeros((1,12))
+#tariff_object.d_tou_prices = np.zeros((1,4))
+
+load_profiles = np.genfromtxt('profiles_for_bill_calc.csv', delimiter=",", skip_header=1)
+
+dispatcher_profile = load_profiles[:,0]
+reopt_profile = load_profiles[:,1]
+original_profile = load_profiles[:,2]
+
+original_bill, original_results = tFuncs.bill_calculator(original_profile, tariff_object, export_tariff)
+
+dispatcher_bill, dispatcher_results = tFuncs.bill_calculator(dispatcher_profile, tariff_object, export_tariff)
+reopt_bill, reopt_results = tFuncs.bill_calculator(reopt_profile, tariff_object, export_tariff)
+
+print "Original bill: $", original_bill
+print "Dispatcher bill: $", dispatcher_bill
+print "REopt bill: $", reopt_bill
+print "Dispatcher bill savings: $", (original_bill-dispatcher_bill)
+print "REopt bill savings: $", (original_bill-reopt_bill)
+print "Percent savings error: ", 100 * (dispatcher_bill-reopt_bill) / (original_bill-reopt_bill), "%"

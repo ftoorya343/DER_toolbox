@@ -51,7 +51,7 @@ mpl.use('agg')
 import matplotlib.pyplot as plt, mpld3
 
 
-t = tFuncs.Tariff(json_file_name='dummy_tariff.json')
+t = tFuncs.Tariff(json_file_name='pge_e20.json')
 
 class export_tariff:
     """
@@ -66,19 +66,22 @@ class export_tariff:
     period_tou_n = 1
     
 class batt:
-    eta = 0.90 # battery half-trip efficiency
-    power = 500.0
-    cap = power*4
+    SOC_min = 0.2
+    #eta = 0.9107140056021978 # battery half-trip efficiency
+    eta_charge = 0.8294
+    eta_discharge = 1.0
+    power = 181.938
+    cap = 521.727*(1-SOC_min)
 
-profile = np.genfromtxt('input_profile_lg_office_delaware.csv', delimiter=",", skip_header=1)
-load_profile = profile[:,0]
+profile = np.genfromtxt('input_profile_reopt_compare_sf.csv', delimiter=",", skip_header=1)
+original_load_profile = profile[:,0]
 pv_cf_profile = profile[:,1]
 
-pv_size = 1000.0
-load_profile = load_profile - pv_size*pv_cf_profile
+pv_size = 2088.63
+load_profile = original_load_profile - pv_size*pv_cf_profile
 pv_profile = pv_size*pv_cf_profile
 aep = np.sum(pv_profile)
-aec = np.sum(load_profile)
+aec = np.sum(original_load_profile)
 energy_penetration = aep / aec
 print "annual energy penetration:", energy_penetration
 
@@ -114,7 +117,7 @@ illegal = 99999999
 batt_influence_to_achieve_demand_max = demand_max_profile - load_profile
 batt_influence_to_achieve_demand_max = np.clip(batt_influence_to_achieve_demand_max, -batt.power, batt.power) #The clip might not be necessary, since I mod anyway. 
 
-batt_actions_to_achieve_demand_max = np.array([s*batt.eta if s >= 0 else s/batt.eta for s in batt_influence_to_achieve_demand_max], float)
+batt_actions_to_achieve_demand_max = np.array([s*batt.eta_charge if s >= 0 else s/batt.eta_discharge for s in batt_influence_to_achieve_demand_max], float)
 
 # Build offset
 batt_e_levels = np.zeros(len(batt_actions_to_achieve_demand_max), float)
@@ -135,8 +138,8 @@ batt_act_cumsum_mod_rev = np.mod(np.cumsum(batt_actions_to_achieve_demand_max[np
 
 #%%
 # Casting a wide net, and doing a pass/fail test later on with cost-to-go. May later evaluate the limits up front.
-batt_charge_limit = int(batt.power*batt.eta/DP_res) + 1
-batt_discharge_limit = int(batt.power/batt.eta/DP_res) + 1
+batt_charge_limit = int(batt.power*batt.eta_charge/DP_res) + 1
+batt_discharge_limit = int(batt.power/batt.eta_discharge/DP_res) + 1
 batt_charge_limits_len = batt_charge_limit + batt_discharge_limit + 1
 # the fact the battery row levels aren't anchored anymore hasn't been thought through. How will I make sure my net is aligned?
 
@@ -198,7 +201,7 @@ selected_net_loads = np.zeros((DP_inc+1, np.size(load_profile)), float)
 # peak that the battery cannot recharge from before the month ends
 # This would be too strict under a CPP rate.
 # I should change this to evaluating the required charge based on the batt_level matrix, to keep self-consistent
-expected_values[:,-1] = np.linspace(batt.cap,0,DP_inc+1)/batt.eta*np.max(t.e_prices_no_tier) #this should be checked, after removal of buffer rows
+expected_values[:,-1] = np.linspace(batt.cap,0,DP_inc+1)/batt.eta_charge*np.max(t.e_prices_no_tier) #this should be checked, after removal of buffer rows
 
 # Each row is the set of options for a single battery state
 # Each column is an index corresponding to the possible points within the expected_value matrix that that state can reach
@@ -237,8 +240,8 @@ for hour in np.arange(np.size(load_profile)-2, -1, -1):
     discharging_bool = change_in_batt_level_matrix<0
     
     influence_on_load = np.zeros(np.shape(change_in_batt_level_matrix), float)
-    influence_on_load += (change_in_batt_level_matrix*batt.eta) * discharging_bool
-    influence_on_load += (change_in_batt_level_matrix/batt.eta) * charging_bool
+    influence_on_load += (change_in_batt_level_matrix*batt.eta_discharge) * discharging_bool
+    influence_on_load += (change_in_batt_level_matrix/batt.eta_charge) * charging_bool
     influence_on_load -= 0.000000001 # because of rounding error? Problems definitely occur (sometimes) without this adjustment. The adjustment magnitude has not been tuned since moving away from ints.
     
     net_loads = load_profile[hour+1] + influence_on_load
@@ -307,7 +310,7 @@ batt_movement = np.zeros(len(load_profile))
 for n in np.arange(1,len(load_profile)-1,1):
     batt_movement[n] = opt_batt_traj[n] - opt_batt_traj[n-1]
     
-batt_influence_on_load = np.array([s/batt.eta if s >= 0 else s*batt.eta for s in batt_movement], float)
+batt_influence_on_load = np.array([s/batt.eta_charge if s >= 0 else s*batt.eta_discharge for s in batt_movement], float)
 
 opt_net_profile = load_profile + batt_influence_on_load
 
@@ -350,254 +353,3 @@ mpld3.show()
 #final_bill = sum(cheapest_possible_demands[:,-1]) + np.sum(energy_charges) + 12*t.fixed_charge
 
 
-
-
-
-#%%
-def calc_min_possible_demands(res, load_profile, d_tou_month_periods, batt, t, month):
-    '''
-    Function that determines the minimum possible demands that this battery 
-    can achieve for a particular month.
-    
-    Inputs:
-    b: battery class object
-    t: tariff class object
-    
-    to-do:
-    add a vector of forced discharges, for demand response representation
-    
-    '''
-    # Recast d_tou_month_periods vector into d_tou_month_index, which is in terms of increasing integers starting at zero
-    unique_periods = np.unique(d_tou_month_periods)
-    Dn_month = len(unique_periods)
-    d_tou_month_index = np.copy(d_tou_month_periods)
-    for n in range(len(unique_periods)): d_tou_month_index[d_tou_month_periods==unique_periods[n]] = n
-     
-     
-    # Calculate the original and minimum possible demands in each period
-    original_demands = np.zeros(Dn_month)
-    min_possible_demands = np.zeros(Dn_month)
-    for period in range(Dn_month):
-        original_demands[period] = np.max(load_profile[d_tou_month_index==period])
-        min_possible_demands = original_demands - batt.power
-            
-    # d_ranges is the range of demands in each period that will be investigated
-    d_ranges = np.zeros((res,Dn_month), float)
-    for n in range(Dn_month):
-        d_ranges[:,n] = np.linspace(min_possible_demands[n], original_demands[n], res)
-        
-    # First evaluate a set that cuts diagonally across the search space
-    # I haven't checked to make sure this is working properly yet
-    # At first glance, the diagonal seems to slow quite a bit if period=1, so maybe identify and skip if p=1?
-    for n in range(len(d_ranges[:,0])):
-        success = dispatch_pass_fail(load_profile, d_tou_month_index, d_ranges[n,:], batt)
-        if success == True: 
-            i_of_first_success = n
-            break
-        
-    # Assemble a list of all combinations of demand levels within the ranges of 
-    # interest, calculate their demand charges, and sort by increasing cost
-    d_combinations = np.zeros(((res-i_of_first_success)**len(unique_periods),Dn_month+1), float)
-    d_combinations[:,:Dn_month] = gFuncs.cartesian([np.asarray(d_ranges[i_of_first_success:,x]) for x in range(Dn_month)])
-    TOU_demand_charge = np.sum(tFuncs.tiered_calc_vec(d_combinations[:,:Dn_month], t.d_tou_levels[:,unique_periods], t.d_tou_prices[:,unique_periods]),1) #check that periods line up with rate
-    monthly_demand_charge = tFuncs.tiered_calc_vec(np.max(d_combinations[:,:Dn_month],1), t.d_monthly_levels[:,month], t.d_monthly_prices[:,month])
-    d_combinations[:,-1] = TOU_demand_charge + monthly_demand_charge   
-    
-    # this old approach left a zero-cost option essentially unsorted
-    #d_combinations = d_combinations[d_combinations[:,-1].argsort(order = ['cost','p1'])]
-    
-    # These next several steps are sorting first by ascending cost, and then
-    # by descending value of the lowest cost period (in an effort to catch a zero-cost period)
-    # Without this, it would solve for the highest-demand zero-cost period value that
-    # could still meet the other period's requirements, which would then result in unnecessary 
-    # dispatching to peak shaving during zero-cost periods. 
-    # invert sign so that the sorting will work...
-    d_combinations[:,:-1] = -d_combinations[:,:-1]
-    
-    d_tou_costs = np.sum(t.d_tou_prices[:,unique_periods], 0)
-    i_min = np.argmin(d_tou_costs)
-    d_combinations = d_combinations[np.lexsort((d_combinations[:,i_min], d_combinations[:,-1]))]
-
-    # invert back...
-    d_combinations[:,:-1] = -d_combinations[:,:-1]
-    
-    cheapest_d_states = np.zeros(t.d_n+1)
-    for n in range(len(d_combinations[:,0])):
-        success = dispatch_pass_fail(load_profile, d_tou_month_index, d_combinations[n,:-1], batt)
-        if success == True:
-            #print "Cheapest possible demand states:", np.round(d_combinations[n,:],1)
-            cheapest_d_states[unique_periods] = d_combinations[n,:Dn_month]
-            cheapest_d_states[-1] = d_combinations[n,-1]
-            break
-    
-    d_max_vector = np.zeros(len(d_tou_month_periods))
-    # not correct
-    for p in unique_periods: d_max_vector[d_tou_month_periods==p] = cheapest_d_states[p]
-    #for n in range(len(unique_periods)): d_max_vector[Dper==unique_periods[n]] = cheapest_d_states[n]
-    #cheapest_d_states_all[unique_periods] = cheapest_d_states[]
-    
-    # Report original demand levels and their total (TOU+seasonal) cost, for reference bill calculation
-    
-    
-    return cheapest_d_states, d_max_vector
-    
-#%%
-def dispatch_pass_fail(load_profile, demand_tou_8760_vector, targets, batt):
-    '''
-    Function to determine if the battery with the specified power, capacity, and efficiency
-    values can achieve the demand levels specified.
-    
-    INPUTS:
-    load_profile: Original load profile, that the battery will be manipulating
-    demand_tou_8760_vector = Vector of integer demand periods, equal to the length
-                        of the time period under evaluation (typically the hours in a month)
-    targets = 
-    
-    '''
-    demand_vector = [targets[d] for d in demand_tou_8760_vector] # Map the target demands to the hourly vector
-    poss_batt_level_change = demand_vector - load_profile
-    poss_batt_level_change = [batt.power if s>batt.power else s for s in poss_batt_level_change] 
-    poss_batt_level_change = [-batt.power if s<-batt.power else s for s in poss_batt_level_change] 
-    poss_batt_level_change = [s/batt.eta if s<0 else s*batt.eta for s in poss_batt_level_change]
-    batt_e_level = batt.cap
-    
-    success = True
-    for n in range(len(demand_tou_8760_vector)):
-        batt_e_level += poss_batt_level_change[n]
-        if batt_e_level < 0: success=False; break
-        elif batt_e_level > batt.cap: batt_e_level = batt.cap
-    
-    return success
-
-#%% Energy Arbitrage Value Estimator
-def calc_estimator_params(load_and_pv_profile, tariff, NEM_tariff, eta):
-    '''
-    This function creates two 12x24 matrixes that are the marginal value of 
-    energy (for each hour of each month) for the given load profile on the 
-    given rate.
-    
-    Assumptions:
-        -TOU windows are aligned with when the battery would be dispatching for
-         demand peak shaving.
-        -The battery will be able to dispatch fully and recharge fully every 24
-         hour cycle.
-    
-    To Do:
-        -Consider coming up with a better method that captures exportation, CPP, etc
-         Maybe? Or just confirm a simple estimation works with our dGen set, 
-         and use the accurate dispatch for any other analysis.
-    
-    '''
-  
-    #load_and_pv_profile = df_row['consumption_hourly'] - df_row['generation_hourly']
-        
-    # Calculate the energy charges for the input load profile    
-    annual_bill, tariff_results = tFuncs.bill_calculator(load_and_pv_profile, tariff, NEM_tariff)
-    e_period_sums = tariff_results['e_period_sums']
-    e_charges = tariff_results['e_period_charges']
-    
-    # Add 1 kW to every hour of the load profile and recalculate the new energy charges
-    load_and_pv_profile_plus_1kw = load_and_pv_profile + 1
-    annual_bill, tariff_results2 = tFuncs.bill_calculator(load_and_pv_profile_plus_1kw, tariff, NEM_tariff)
-    e_period_sums2 = tariff_results2['e_period_sums']
-    e_charges2 = tariff_results2['e_period_charges']
-    
-    # Determine the marginal energy savings in $/kWh for each of the periods
-    marg_consum = e_period_sums2 - e_period_sums
-    marg_e_charges = e_charges2 - e_charges
-    
-    marg_e_chrg_per_kWh = marg_e_charges / marg_consum
-    marg_e_chrg_per_kWh = marg_e_chrg_per_kWh.reshape(12,int(len(marg_e_chrg_per_kWh)/12))
-    
-    # Extract the 12x24 energy period schedules and adjust by 1 so it is an index
-    wkday_schedule = tariff.e_sched_weekday - 1
-    wkend_schedule = tariff.e_sched_weekend - 1
-    
-    # Create two 12x24's of the value of energy in each hour of each month
-    e_wkday_value_schedule = np.zeros([12,24])
-    e_wkend_value_schedule = np.zeros([12,24])
-    for row in range(12):
-        e_wkday_value_schedule[row,:] = marg_e_chrg_per_kWh[row,wkday_schedule[row,:]]
-        e_wkend_value_schedule[row,:] = marg_e_chrg_per_kWh[row,wkend_schedule[row,:]]
-    
-    # Sort the matrix such that the each month has increasing marginal energy savings 
-    sorted_e_wkday_value = np.sort(e_wkday_value_schedule)
-    sorted_e_wkend_value = np.sort(e_wkend_value_schedule)
-
-    results = {'e_chrgs_with_PV':sum(tariff_results['e_period_charges']),
-                'arbitrage_value_wkday':sorted_e_wkday_value,
-                'arbitrage_value_wkend':sorted_e_wkend_value}
-    
-    #df_row['e_chrgs_with_PV'] = sum(tariff_results['e_period_charges'])
-    #df_row['arbitrage_value_wkday'] = sorted_e_wkday_value
-    #df_row['arbitrage_value_wkend'] = sorted_e_wkend_value
-    
-    return results
-    
-#%%
-def estimate_annual_arbitrage_profit(power, capacity, eta, sorted_e_wkday_value, sorted_e_wkend_value):
-
-    '''
-    This function uses the 12x24 marginal energy costs from calc_estimator_params
-    to estimate the potential arbitrage value of a battery.
-    
-    
-    To Do
-        -Right now it fully cycles every 24 hours, even in situations where
-         there is no arbitrage opportunity, resulting in reduced or negative 
-         energy values. Definitely set min to zero, and potentially estimate
-         better.
-        -restrict action if cap > 12*power
-    '''
-    
-    # Started working on better estimation of hours of positive arbitrage value
-    # Determine how many hours have positive arbitrage value opportunity
-    #wkday_diff = sorted_e_wkday_value[:,np.arange(23,11,-1)]*eta - sorted_e_wkday_value[:,:12]/eta
-    #wkend_diff = sorted_e_wkend_value[:,np.arange(23,11,-1)]*eta - sorted_e_wkend_value[:,:12]/eta
-    
-    #wkday_value_bool = wkday_diff > 0.0
-    #wkend_value_bool = wkend_diff > 0.0
-    
-    #wkday_n_pos = np.sum(wkday_value_bool, 1)
-    #wkend_n_pos = np.sum(wkend_value_bool, 1)
-    
-    #wkday_n_movement = np.max(wkday_n_pos, capacity, 1)
-
-   
-    # Determine how many hour 'blocks' the battery will need to consume to charge, 
-    #  and what the kWh consumption during those blocks will be
-    # reduce capacity by eta, since this is essentially just estimating what can be discharged off a full battery
-    
-    charge_blocks = np.zeros(int(np.floor(capacity/eta/power)+1))
-    charge_blocks[:-1] = np.tile(power,int(np.floor(capacity/eta/power)))
-    charge_blocks[-1] = np.mod(capacity/eta,power)
-    
-    # Determine how many hour 'blocks' the battery will need to cover to discharge,
-    #  and what the kWh discharged during those blocks will be
-    discharge_blocks = np.zeros(int(np.floor(capacity*eta/power)+1))
-    discharge_blocks[:-1] = np.tile(power,int(np.floor(capacity*eta/power)))
-    discharge_blocks[-1] = np.mod(capacity*eta,power)
-    
-    # Determine the max revenue that can be collected by a complete discharge 
-    #  into the most expensive hours. Determine the cost of charging from the 
-    #  least expensive hours.
-    # This will fail if capacity > 12*power
-    wkday_daily_revenue = np.sum(sorted_e_wkday_value[:,np.arange(23,23-len(discharge_blocks),-1)]*discharge_blocks[np.arange(len(discharge_blocks)-1,-1,-1)], 1)
-    wkend_daily_revenue = np.sum(sorted_e_wkend_value[:,np.arange(23,23-len(discharge_blocks),-1)]*discharge_blocks[np.arange(len(discharge_blocks)-1,-1,-1)], 1)
-    wkday_daily_cost = np.sum(sorted_e_wkday_value[:,:len(charge_blocks)]*charge_blocks, 1)
-    wkend_daily_cost = np.sum(sorted_e_wkend_value[:,:len(charge_blocks)]*charge_blocks, 1)    
-    
-    wkday_daily_profit = wkday_daily_revenue - wkday_daily_cost 
-    wkend_daily_profit = wkend_daily_revenue - wkend_daily_cost 
-    wkday_daily_profit[wkday_daily_profit<0] = 0
-    wkend_daily_profit[wkend_daily_profit<0] = 0
-    
-    # Determine the total annual revenue from discharging, cost from charging, 
-    #  and resulting arbitrage profit opportunity   
-    #annual_revenue = sum(wkday_daily_revenue*21) + sum(wkend_daily_revenue*8)
-    #annual_cost = sum(wkday_daily_cost*21) + sum(wkend_daily_cost*8)
-    #annual_arbitrage_profit = annual_revenue - annual_cost
-    
-    annual_arbitrage_profit = sum(wkday_daily_profit*21) - sum(wkend_daily_profit*8)
-
-    return annual_arbitrage_profit

@@ -313,7 +313,7 @@ class Tariff:
             self.d_tou_8760 = np.zeros(8760, int)
             self.e_tou_8760 = np.zeros(8760, int)
             hour = 0
-            day = 0
+            day = 6
             for h in range(8760):
                 if day < 5:
                     self.d_tou_8760[h] = self.d_wkday_12by24[month_index[h], hour]
@@ -449,6 +449,7 @@ def bill_calculator(load_profile, tariff, export_tariff):
     -Not sure what happens if there is no energy component in the tariff, at the moment    
     -I haven't checked the TOU export credit option yet.
     -I don't make any type of check about what day of the week this calculator assumes your load profile is starting on
+    -e_period_charges wasn't being built for non-NEM
     """
     
     n_months = 12
@@ -537,6 +538,10 @@ def bill_calculator(load_profile, tariff, export_tariff):
             e_month_import_total_charges[month] = np.sum(e_period_import_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
             
         e_month_total_net_charges = e_month_import_total_charges - export_month_total_credits
+
+        # placeholder        
+        e_period_charges = "placeholder"
+        e_period_sums = "placeholder"
      
     # Calculate energy charges with full retail NEM 
     else:
