@@ -64,7 +64,7 @@ class Tariff:
      this may have been solved now, but general unit check would be good.
     """
         
-    def __init__(self, urdb_id=None, json_file_name=None):
+    def __init__(self, start_day=6, urdb_id=None, json_file_name=None):
                    
         #######################################################################
         ##### If given no urdb id or csv file name, create blank tariff #######
@@ -89,6 +89,7 @@ class Tariff:
             self.eia_id = 'No eia id given' 
             self.demand_rate_unit = 'kW'
             self.energy_rate_unit = 'kWh'
+            self.start_day = 6
             
             
             ###################### Blank Flat Demand Structure ########################
@@ -304,6 +305,7 @@ class Tariff:
                     self.d_wkend_12by24[month, :] = tariff_original['demandweekendschedule'][month]
             
             ################### Repackage 12x24s as 8760s Schedule ########################
+            self.start_day = start_day            
             month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760], int)
             
             month_index = np.zeros(8760, int)
@@ -313,7 +315,7 @@ class Tariff:
             self.d_tou_8760 = np.zeros(8760, int)
             self.e_tou_8760 = np.zeros(8760, int)
             hour = 0
-            day = 6
+            day = start_day # Start on 6 because the load profiles we are using start on a Sunday
             for h in range(8760):
                 if day < 5:
                     self.d_tou_8760[h] = self.d_wkday_12by24[month_index[h], hour]
@@ -396,6 +398,7 @@ class Tariff:
             ######################## Precalculations ######################################
             self.e_prices_no_tier = d['e_prices_no_tier'] # simplification until something better is implemented
             self.e_max_difference = d['e_max_difference']
+            self.start_day = d['start_day']
     
     #######################################################################
     # Write the current class object to a json file
@@ -463,6 +466,7 @@ def bill_calculator(load_profile, tariff, export_tariff):
     month_index = np.zeros(8760, int)
     for month, hours in enumerate(month_hours):
         month_index[month_hours[month-1]:hours] = month-1
+        
     
     ###################### Calculate TOU Demand Charges ###########################
     if tariff.d_tou_exists == True:
@@ -580,10 +584,14 @@ def bill_calculator(load_profile, tariff, export_tariff):
         # bills where it was netted against those where it wasn't
         export_month_total_credits = e_month_total_net_charges - e_month_total_import_charges
         
+        e_period_import_sums = 'placeholder'
+        
     total_monthly_bills = d_TOU_month_total_charges + flat_charges + e_month_total_net_charges + tariff.fixed_charge
     annual_bill = sum(total_monthly_bills)
         
     results_dict = {'annual_bill':annual_bill,
+                    'd_charges':np.sum(d_TOU_month_total_charges + flat_charges),
+                    'e_charges':np.sum(e_month_total_net_charges),
                     'monthly_total_bills':total_monthly_bills,
                     'monthly_d_charges':d_TOU_month_total_charges + flat_charges,
                     'monthly_d_tou_charges':d_TOU_month_total_charges,
@@ -594,7 +602,9 @@ def bill_calculator(load_profile, tariff, export_tariff):
                     'period_kW_maxs':period_maxs,
                     'monthly_kW_maxs':flat_maxs,
                     'period_e_charges':e_period_charges,
-                    'period_e_sums':e_period_sums}
+                    'period_e_sums':e_period_sums,
+                    'e_period_import_sums':e_period_import_sums
+                    }
     
     return annual_bill, results_dict
     

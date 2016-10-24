@@ -5,6 +5,34 @@ Created on Wed Jul 13 00:03:41 2016
 @author: pgagnon
 """
 
+
+
+
+
+
+
+
+this script has been retired, and moved into dispatch functions
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 '''
 Function that determines the optimal dispatch of the battery, and in the
 process determines the resulting first year bill with the system.
@@ -65,14 +93,6 @@ class export_tariff:
     periods_8760 = np.zeros(8760, int)
     period_tou_n = 1
     
-class batt:
-    SOC_min = 0.2
-    #eta = 0.9107140056021978 # battery half-trip efficiency
-    eta_charge = 0.8294
-    eta_discharge = 1.0
-    power = 181.938
-    cap = 521.727*(1-SOC_min)
-
 profile = np.genfromtxt('input_profile_reopt_compare_sf.csv', delimiter=",", skip_header=1)
 original_load_profile = profile[:,0]
 pv_cf_profile = profile[:,1]

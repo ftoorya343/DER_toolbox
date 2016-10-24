@@ -8,12 +8,8 @@ To Do:
 - I have not checked the 12x24 to 8760 conversion
 """
 
-import requests as req
 import numpy as np
-import pandas as pd
 import tariff_functions as tFuncs
-
-    
 
 class export_tariff:
     """
