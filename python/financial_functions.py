@@ -115,8 +115,8 @@ def cashflow_constructor(bill_savings,
     bill_savings = bill_savings*inflation_adjustment # Adjust for inflation
     after_tax_bill_savings = np.zeros(shape)
     after_tax_bill_savings = bill_savings * (1 - (sector!='res').reshape(n_agents,1)*effective_tax_rate.reshape(n_agents,1)) # reduce value of savings because they could have otherwise be written off as operating expenses
-    
-    cf += after_tax_bill_savings
+        
+    cf += bill_savings
     
     #################### Installed Costs ######################################
     # Assumes that cash incentives, IBIs, and CBIs will be monetized in year 0,
@@ -207,7 +207,8 @@ def cashflow_constructor(bill_savings,
     
     state_deductions = np.zeros(shape)
     state_deductions += interest_payments * (sector!='res').reshape(n_agents,1)
-    state_deductions += operating_expenses_cf
+    state_deductions += operating_expenses_cf * (sector!='res').reshape(n_agents,1)
+    state_deductions -= bill_savings
     
     total_taxable_state_income_less_deductions = total_taxable_income - state_deductions
     state_income_taxes = total_taxable_state_income_less_deductions * state_tax_rate.reshape(n_agents,1)
@@ -219,10 +220,11 @@ def cashflow_constructor(bill_savings,
     ################## Federal Income Tax #########################################
     # Assumes all deductions are federal
     fed_deductions = np.zeros(shape)
-    fed_deductions += interest_payments
-    fed_deductions += deprec_deductions
+    fed_deductions += interest_payments * (sector!='res').reshape(n_agents,1)
+    fed_deductions += deprec_deductions * (sector!='res').reshape(n_agents,1)
     fed_deductions += state_income_taxes
-    fed_deductions += operating_expenses_cf
+    fed_deductions += operating_expenses_cf * (sector!='res').reshape(n_agents,1)
+    fed_deductions -= bill_savings
     
     total_taxable_fed_income_less_deductions = total_taxable_income - fed_deductions
     fed_income_taxes = total_taxable_fed_income_less_deductions * fed_tax_rate.reshape(n_agents,1)
@@ -232,6 +234,12 @@ def cashflow_constructor(bill_savings,
     cf += fed_tax_savings_or_liability_less_itc
     cf[:,1] += itc_value
     
+    
+    ######################## Packaging tax outputs ############################
+    interest_payments_tax_savings = interest_payments * effective_tax_rate.reshape(n_agents,1)
+    operating_expenses_tax_savings = operating_expenses_cf * effective_tax_rate.reshape(n_agents,1)
+    deprec_deductions_tax_savings = deprec_deductions * fed_tax_rate.reshape(n_agents,1)    
+    elec_OM_deduction_decrease_tax_liability = bill_savings * effective_tax_rate.reshape(n_agents,1)
     
     ########################### Post Processing ###############################
     cf_discounted = cf * (1/(1+nom_d)**np.array(range(analysis_years+1)))
@@ -268,7 +276,11 @@ def cashflow_constructor(bill_savings,
                'state_income_taxes':state_income_taxes,
                'fed_deductions':fed_deductions,
                'total_taxable_fed_income_less_deductions':total_taxable_fed_income_less_deductions,
-               'fed_income_taxes':fed_income_taxes}
+               'fed_income_taxes':fed_income_taxes,
+               'interest_payments_tax_savings':interest_payments_tax_savings,
+               'operating_expenses_tax_savings':operating_expenses_tax_savings,
+               'deprec_deductions_tax_savings':deprec_deductions_tax_savings,
+               'elec_OM_deduction_decrease_tax_liability':elec_OM_deduction_decrease_tax_liability}
 
     return results
 
@@ -297,37 +309,20 @@ def calc_npv(cfs,dr):
     
     
 #==============================================================================
- 
-def calc_payback(cfs,revenue,costs,tech_lifetime):
-    '''payback calculator ### VECTORIZE THIS ###
-    IN: cfs - numpy array - project cash flows ($/yr)
-    OUT: pp - numpy array - interpolated payback period (years)
-    '''
-    cum_cfs = cfs.cumsum(axis = 1)
-    out = []
-    for x in cum_cfs:
-        if x[-1] < 0: # No payback if the cum. cfs are negative in the final year
-            pp = 30
-        elif all(x<0): # Is positive cashflow ever achieved?
-            pp = 30
-        elif all(x>0): # Is positive cashflow instantly achieved?
-            pp = 0
-        else:
-            # Return the last year where cumulative cfs changed from negative to positive
-            base_year = np.where(np.diff(np.sign(x))>0)[0] 
-            if base_year.size > 0:      
-                base_year = base_year.max()
-                frac_year = x[base_year]/(x[base_year] - x[base_year+1])
-                pp = base_year + frac_year
-            else: # If the array is empty i.e. never positive cfs, pp = 30
-                pp = 30
-        out.append(pp)
-    return np.array(out).round(decimals =1) # must be rounded to nearest 0.1 to join with max_market_share
-    
+     
 def calc_payback_vectorized(cfs, tech_lifetime):
-    '''payback calculator ### VECTORIZE THIS ###
-    IN: cfs - numpy array - project cash flows ($/yr)
-    OUT: pp - numpy array - interpolated payback period (years)
+    '''payback calculator
+    Can be either simple payback or discounted payback, depending on whether
+     the input cash flow is discounted.    
+    
+    Author: Ben Sigrin    
+    
+    Inputs:
+    -cfs - numpy array - project cash flows ($/yr)
+    
+    Outputs: 
+    pp - numpy array - interpolated payback period (years)
+    
     '''
     
     years = np.array([np.arange(0, tech_lifetime)] * cfs.shape[0])
@@ -337,9 +332,11 @@ def calc_payback_vectorized(cfs, tech_lifetime):
     instant_payback = np.all(cum_cfs > 0, axis = 1)
     neg_to_pos_years = np.diff(np.sign(cum_cfs)) > 0
     base_years = np.amax(np.where(neg_to_pos_years, years, -1), axis = 1)
+    
     # replace values of -1 with 30
     base_years_fix = np.where(base_years == -1, tech_lifetime - 1, base_years)
     base_year_mask = years == base_years_fix[:, np.newaxis]
+    
     # base year values
     base_year_values = cum_cfs[:, :-1][base_year_mask]
     next_year_values = cum_cfs[:, 1:][base_year_mask]
@@ -347,9 +344,7 @@ def calc_payback_vectorized(cfs, tech_lifetime):
     pp_year = base_years_fix + frac_years
     pp_precise = np.where(no_payback, 30, np.where(instant_payback, 0, pp_year))
     
-    # round to nearest 0.1 to join with max_market_share
-    pp_final = np.array(pp_precise).round(decimals =1)
-    
+    pp_final = np.array(pp_precise).round(decimals = 3)
     
     return pp_final
     
