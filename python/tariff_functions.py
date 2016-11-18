@@ -64,13 +64,13 @@ class Tariff:
      this may have been solved now, but general unit check would be good.
     """
         
-    def __init__(self, start_day=6, urdb_id=None, json_file_name=None):
+    def __init__(self, start_day=6, urdb_id=None, json_file_name=None, dict_obj=None):
                    
         #######################################################################
         ##### If given no urdb id or csv file name, create blank tariff #######
         #######################################################################
                    
-        if urdb_id==None and json_file_name==None:
+        if urdb_id==None and json_file_name==None and dict_obj==None:
             # Default values for a blank tariff
             self.urdb_id = 'No urdb id given'               
             self.name = 'User defined tariff - no name specified'
@@ -399,6 +399,69 @@ class Tariff:
             self.e_prices_no_tier = d['e_prices_no_tier'] # simplification until something better is implemented
             self.e_max_difference = d['e_max_difference']
             self.start_day = d['start_day']
+            
+        #######################################################################
+        # If given a dict input, construct a tariff from that object
+        #######################################################################    
+        elif dict_obj != None:
+            if 'urdb_id' in dict_obj: self.urdb_id = dict_obj['urdb_id']
+            if 'name' in dict_obj: self.name = dict_obj['name']
+            if 'utility' in dict_obj: self.utility = dict_obj['utility']
+            if 'sector' in dict_obj: self.sector = dict_obj['sector']
+            if 'comments' in dict_obj: self.comments = dict_obj['comments']
+            if 'description' in dict_obj: self.description = dict_obj['description']
+            if 'source' in dict_obj: self.source = dict_obj['source']
+            if 'uri' in dict_obj: self.uri = dict_obj['uri']
+            if 'voltage_category' in dict_obj: self.voltage_category = dict_obj['voltage_category']
+            self.fixed_charge = dict_obj['fixed_charge']
+            self.peak_kW_capacity_max = dict_obj['peak_kW_capacity_max']
+            self.peak_kW_capacity_min = dict_obj['peak_kW_capacity_min']
+            self.kWh_useage_max = dict_obj['kWh_useage_max']
+            self.kWh_useage_min = dict_obj['kWh_useage_min']
+            self.eia_id = dict_obj['eia_id']
+            self.demand_rate_unit = dict_obj['demand_rate_unit']
+            self.energy_rate_unit = dict_obj['energy_rate_unit']
+            
+            
+            ###################### Flat Demand Structure ########################
+            self.d_flat_exists = dict_obj['d_flat_exists']
+            self.d_flat_prices = np.array(dict_obj['d_flat_prices'])
+            self.d_flat_levels = np.array(dict_obj['d_flat_levels'])
+            self.d_flat_n = dict_obj['d_flat_n']
+            
+            #################### Demand TOU Structure ###########################
+            self.d_tou_exists = dict_obj['d_tou_exists']
+            self.d_tou_n = dict_obj['d_tou_n']
+            self.d_tou_prices = np.array(dict_obj['d_tou_prices'])    
+            self.d_tou_levels = np.array(dict_obj['d_tou_levels'])
+            
+            
+            ######################## Energy Structure ###########################
+            self.e_exists = dict_obj['e_exists']
+            self.e_tou_exists = dict_obj['e_tou_exists']
+            self.e_n = dict_obj['e_n']
+            self.e_prices = np.array(dict_obj['e_prices'])   
+            self.e_levels = np.array(dict_obj['e_levels'])
+            
+                
+            ######################## Schedules ###########################
+            self.e_wkday_12by24 = np.array(dict_obj['e_wkday_12by24'])
+            self.e_wkend_12by24 = np.array(dict_obj['e_wkend_12by24'])
+            self.d_wkday_12by24 = np.array(dict_obj['d_wkday_12by24'])
+            self.d_wkend_12by24 = np.array(dict_obj['d_wkend_12by24'])
+            
+            
+            ################### 12x24s as 8760s Schedule ########################
+            self.d_tou_8760 = np.array(dict_obj['d_tou_8760'])
+            self.e_tou_8760 = np.array(dict_obj['e_tou_8760'])
+            
+            
+            ######################## Precalculations ######################################
+            self.e_prices_no_tier = np.array(dict_obj['e_prices_no_tier']) # simplification until something better is implemented
+            self.e_max_difference = dict_obj['e_max_difference']
+            if 'start_day' in dict_obj: self.start_day = dict_obj['start_day']
+            else: self.start_day = 6
+            
     
     #######################################################################
     # Write the current class object to a json file
@@ -417,7 +480,25 @@ class Tariff:
         with open(json_file_name, 'w') as fp:
             json.dump(d_prep_for_json, fp)
             
-                   
+                 
+                 
+class Export_Tariff:
+    """
+    Structure of compensation for exported generation. Currently only two 
+    styles: full-retail NEM, and instantanous TOU energy value. 
+    """
+    
+    def __init__(self, full_retail_nem, 
+                 prices = np.zeros([1, 1], float),
+                 levels = np.zeros([1, 1], float),
+                 periods_8760 = np.zeros(8760, int),
+                 period_tou_n = 1):
+     
+        self.full_retail_nem = full_retail_nem
+        self.prices = prices     
+        self.levels = levels
+        self.periods_8760 = periods_8760
+        self.period_tou_n = period_tou_n
 
 #%%
 def tiered_calc_vec(values, levels, prices):

@@ -310,7 +310,7 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
             
         
         elif estimated == True:
-            batt_arbitrage_value = estimate_annual_arbitrage_profit(batt.effective_power, batt.cap_effective, batt.eta_charge, batt.eta_discharge, estimator_params['cost_sum'], estimator_params['revenue_sum'])                
+            batt_arbitrage_value = estimate_annual_arbitrage_profit(batt.effective_power, batt.effective_cap, batt.eta_charge, batt.eta_discharge, estimator_params['cost_sum'], estimator_params['revenue_sum'])                
             bill_under_dispatch = sum(cheapest_possible_demands[:,-1]) + 12*t.fixed_charge + estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
             opt_load_traj = None
             #energy_charges = estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value

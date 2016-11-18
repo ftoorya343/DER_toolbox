@@ -7,6 +7,8 @@ Created on Tue Oct 11 10:27:48 2016
 
 import numpy as np
 
+
+#%%
 def cashflow_constructor(bill_savings, 
                          pv_size, pv_price, inverter_price, pv_om,
                          batt_cap, batt_power, batt_power_price, batt_cap_price, batt_chg_frac,
@@ -15,7 +17,7 @@ def cashflow_constructor(bill_savings,
                          fed_tax_rate, state_tax_rate, real_d, debt_fraction, 
                          analysis_years, inflation, 
                          loan_rate, loan_term, 
-                         cash_incentives=0, ibi=0, cbi=0, pbi=0):
+                         cash_incentives=np.array([0]), ibi=np.array([0]), cbi=np.array([0]), pbi=np.array([0])):
     '''
     Accepts financial assumptions and returns the cash flows for the projects.
     Vectorized.
@@ -53,60 +55,48 @@ def cashflow_constructor(bill_savings,
     -improve the .reshape(n_agents,1) implementation
     -Make battery replacements depreciation an input, with default of 7 year MACRS
     -Have a better way to deal with capacity vs effective capacity and battery costs
+    -make it so it can accept different loan terms
     '''
 
-    ########################## Test Inputs ########################################
-    
-#    analysis_years = 25
-    
-#    e_escalation = np.zeros(analysis_years+1)
-#    e_escalation[0] = 1.0
-#    e_escalation[1:] = (1.0039)**np.arange(analysis_years)
-#    
-#    bill_savings = np.zeros([2,26], float)
-#    bill_savings[0,1:] = 416269.0 #416269
-#    bill_savings[1,1:] = 416269.0 #416269
-#    bill_savings = bill_savings*e_escalation
-#    pv_size = np.array([2088.63, 2088.63])
-#    pv_price = np.array([2160.0, 2160])
-#    inverter_price = np.array([0.0, 0])
-#    pv_om = np.array([20.0, 20])
-#    batt_cap = np.array([521.727, 521.727])
-#    batt_power = np.array([181.938, 181.938])
-#    batt_power_price = np.array([1600.0, 1600.0])
-#    batt_cap_price = np.array([500.0, 500.0])
-#    batt_chg_frac = np.array([1.0, 1.0])
-#    batt_replacement_sch = np.array([10,20])
-#    batt_om = np.array([0.0, 0.0])
-#    sector = np.array(['com', 'com'])
-#    itc = np.array([0.3, 0.3])
-#    deprec_sched_single = np.array([0.6, .16, .096, 0.0576, 0.0576, .0288])
-#    deprec_sched = np.zeros([2,len(deprec_sched_single)]) + deprec_sched_single
-#    deprec_sched_single = np.array([0.6, .16, .096, 0.0576, 0.0576, .0288])
-#    macrs_7_yr_sch = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])
-#    fed_tax_rate = np.array([0.35, 0.35])
-#    state_tax_rate = np.array([0.0, 0.0])
-#    real_d = np.array([0.08, 0.08])
-#    debt_fraction = np.array([0.0, 0.0])
-#    inflation = 0.02
-#    loan_rate = np.array([0.05, 0.05])
-#    loan_term = np.array(20)
-#    cash_incentives = np.array([0,0])
-#    ibi = np.array([0,0])
-#    cbi = np.array([0,0])
-#    pbi = np.array([0,0])
-    
-        
-    #################### Setup #########################################
+    #################### Massage inputs ########################################
+    # If given just a single value for an agent-specific variable, repeat that
+    # variable for each agent. This assumes that the variable is intended to be
+    # applied to each agent. 
+
     if np.size(np.shape(bill_savings)) == 1: shape = (1, analysis_years+1)
     else: shape = (np.shape(bill_savings)[0], analysis_years+1)
+    n_agents = shape[0]
+
+    if np.size(sector) != n_agents or n_agents==1: sector = np.repeat(sector, n_agents)
+    if np.size(fed_tax_rate) != n_agents or n_agents==1: fed_tax_rate = np.repeat(fed_tax_rate, n_agents)
+    if np.size(state_tax_rate) != n_agents or n_agents==1: state_tax_rate = np.repeat(state_tax_rate, n_agents)
+    if np.size(itc) != n_agents or n_agents==1: itc = np.repeat(itc, n_agents)
+    if np.size(pv_size) != n_agents or n_agents==1: pv_size = np.repeat(pv_size, n_agents)
+    if np.size(pv_price) != n_agents or n_agents==1: pv_price = np.repeat(pv_price, n_agents)
+    if np.size(inverter_price) != n_agents or n_agents==1: inverter_price = np.repeat(inverter_price, n_agents)
+    if np.size(pv_om) != n_agents or n_agents==1: pv_om = np.repeat(pv_om, n_agents)
+    if np.size(batt_cap) != n_agents or n_agents==1: batt_cap = np.repeat(batt_cap, n_agents)
+    if np.size(batt_power) != n_agents or n_agents==1: batt_power = np.repeat(batt_power, n_agents)
+    if np.size(batt_power_price) != n_agents or n_agents==1: batt_power_price = np.repeat(batt_power_price, n_agents)
+    if np.size(batt_cap_price) != n_agents or n_agents==1: batt_cap_price = np.repeat(batt_cap_price, n_agents)
+    if np.size(batt_chg_frac) != n_agents or n_agents==1: batt_chg_frac = np.repeat(batt_chg_frac, n_agents)
+#    if np.size(batt_replacement_sch) != n_agents: batt_replacement_sch = np.repeat(batt_replacement_sch, n_agents)
+    if np.size(batt_om) != n_agents or n_agents==1: batt_om = np.repeat(batt_om, n_agents)
+    if np.size(real_d) != n_agents or n_agents==1: real_d = np.repeat(real_d, n_agents)
+    if np.size(debt_fraction) != n_agents or n_agents==1: debt_fraction = np.repeat(debt_fraction, n_agents)
+    if np.size(loan_rate) != n_agents or n_agents==1: loan_rate = np.repeat(loan_rate, n_agents)
+#    if len(loan_term) != n_agents: loan_term = np.repeat(loan_term, n_agents)
+    if np.size(ibi) != n_agents or n_agents==1: ibi = np.repeat(ibi, n_agents)
+    if np.size(cbi) != n_agents or n_agents==1: cbi = np.repeat(cbi, n_agents)
+    if np.size(pbi) != n_agents or n_agents==1: pbi = np.repeat(pbi, n_agents)
+    if deprec_sched.ndim == 1 or n_agents==1: deprec_sched = np.array([deprec_sched])
+
+    
+    #################### Setup #########################################
     effective_tax_rate = fed_tax_rate * (1 - state_tax_rate) + state_tax_rate
     nom_d = (1 + real_d) * (1 + inflation) - 1
     cf = np.zeros(shape) 
-    #inflation_adjustment = np.zeros(analysis_years+1)
-    #inflation_adjustment[0] = 1.0
     inflation_adjustment = (1+inflation)**np.arange(analysis_years+1)
-    n_agents = shape[0]
     
     #################### Bill Savings #########################################
     # For C&I customers, bill savings are reduced by the effective tax rate,
@@ -139,13 +129,18 @@ def cashflow_constructor(bill_savings,
     
     # Battery replacements
     # Assumes battery replacements can harness 7 year MACRS depreciation
-    batt_power_price_replace = 200.0
-    batt_cap_price_replace = 200.0
+    batt_power_price_replace = batt_power_price * 0.5
+    batt_cap_price_replace = batt_cap_price * 0.5
     replacement_deductions = np.zeros([n_agents,analysis_years+20]) #need a temporary larger array to hold depreciation schedules. Not that schedules may get truncated by analysis years. 
     macrs_7_yr_sch = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])    
-    for yr in batt_replacement_sch:
-        batt_replacement_cf[:,yr] -= batt_power*batt_power_price_replace + batt_cap*batt_cap_price_replace
-        replacement_deductions[:,yr+1:yr+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
+    
+    batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_power_price_replace + batt_cap*batt_cap_price_replace).reshape(n_agents, 1)
+    replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
+    
+    # Problems because of replacement schedule definition
+#    for yr in batt_replacement_sch:
+#        batt_replacement_cf[:,yr] -= batt_power*batt_power_price_replace + batt_cap*batt_cap_price_replace
+#        replacement_deductions[:,yr+1:yr+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
     
     # Adjust for inflation
     inv_replacement_cf = inv_replacement_cf*inflation_adjustment
@@ -242,8 +237,19 @@ def cashflow_constructor(bill_savings,
     elec_OM_deduction_decrease_tax_liability = bill_savings * effective_tax_rate.reshape(n_agents,1)
     
     ########################### Post Processing ###############################
-    cf_discounted = cf * (1/(1+nom_d)**np.array(range(analysis_years+1)))
-    npv = np.sum(cf_discounted)
+    
+#    dr = nom_d[:,np.newaxis]
+#    tmp = np.empty(cf.shape)
+#    tmp[:,0] = 1
+#    tmp[:,1:] = 1/(1+dr)
+#    drm = np.cumprod(tmp, axis = 1)        
+#    npv = (drm * cf).sum(axis = 1)      
+    powers = np.zeros(shape, int)
+    powers[:,:] = np.array(range(analysis_years+1))
+    discounts = np.zeros(shape, float)
+    discounts[:,:] = (1/(1+nom_d)).reshape(n_agents,1)
+    cf_discounted = cf * np.power(discounts, powers)
+    npv = np.sum(cf_discounted, 1)
     
     
     ########################### Package Results ###############################
