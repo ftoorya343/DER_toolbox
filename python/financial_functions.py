@@ -11,12 +11,15 @@ import numpy as np
 #%%
 def cashflow_constructor(bill_savings, 
                          pv_size, pv_price, inverter_price, pv_om,
-                         batt_cap, batt_power, batt_power_price, batt_cap_price, batt_chg_frac,
+                         batt_cap, batt_power, 
+                         batt_cost_per_kw, batt_cost_per_kwh, 
+                         batt_replace_cost_per_kw, batt_replace_cost_per_kwh,
+                         batt_chg_frac,
                          batt_replacement_sch, batt_om,
                          sector, itc, deprec_sched, 
-                         fed_tax_rate, state_tax_rate, real_d, debt_fraction, 
+                         fed_tax_rate, state_tax_rate, real_d,  
                          analysis_years, inflation, 
-                         loan_rate, loan_term, 
+                         debt_fraction, loan_rate, loan_term, 
                          cash_incentives=np.array([0]), ibi=np.array([0]), cbi=np.array([0]), pbi=np.array([0])):
     '''
     Accepts financial assumptions and returns the cash flows for the projects.
@@ -77,8 +80,10 @@ def cashflow_constructor(bill_savings,
     if np.size(pv_om) != n_agents or n_agents==1: pv_om = np.repeat(pv_om, n_agents)
     if np.size(batt_cap) != n_agents or n_agents==1: batt_cap = np.repeat(batt_cap, n_agents)
     if np.size(batt_power) != n_agents or n_agents==1: batt_power = np.repeat(batt_power, n_agents)
-    if np.size(batt_power_price) != n_agents or n_agents==1: batt_power_price = np.repeat(batt_power_price, n_agents)
-    if np.size(batt_cap_price) != n_agents or n_agents==1: batt_cap_price = np.repeat(batt_cap_price, n_agents)
+    if np.size(batt_cost_per_kw) != n_agents or n_agents==1: batt_cost_per_kw = np.repeat(batt_cost_per_kw, n_agents)
+    if np.size(batt_cost_per_kwh) != n_agents or n_agents==1: batt_cost_per_kwh = np.repeat(batt_cost_per_kwh, n_agents)
+    if np.size(batt_replace_cost_per_kw) != n_agents or n_agents==1: batt_replace_cost_per_kw = np.repeat(batt_replace_cost_per_kw, n_agents)
+    if np.size(batt_replace_cost_per_kwh) != n_agents or n_agents==1: batt_replace_cost_per_kwh = np.repeat(batt_replace_cost_per_kwh, n_agents)
     if np.size(batt_chg_frac) != n_agents or n_agents==1: batt_chg_frac = np.repeat(batt_chg_frac, n_agents)
 #    if np.size(batt_replacement_sch) != n_agents: batt_replacement_sch = np.repeat(batt_replacement_sch, n_agents)
     if np.size(batt_om) != n_agents or n_agents==1: batt_om = np.repeat(batt_om, n_agents)
@@ -112,7 +117,7 @@ def cashflow_constructor(bill_savings,
     # Assumes that cash incentives, IBIs, and CBIs will be monetized in year 0,
     # reducing the up front installed cost that determines debt levels. 
     pv_cost = pv_size*pv_price     # assume pv_price includes initial inverter purchase
-    batt_cost = batt_power*batt_power_price + batt_cap*batt_cap_price
+    batt_cost = batt_power*batt_cost_per_kw + batt_cap*batt_cost_per_kwh
     installed_cost = pv_cost + batt_cost
     net_installed_cost = installed_cost - cash_incentives - ibi - cbi
     up_front_cost = net_installed_cost * (1 - debt_fraction)
@@ -129,23 +134,22 @@ def cashflow_constructor(bill_savings,
     
     # Battery replacements
     # Assumes battery replacements can harness 7 year MACRS depreciation
-    batt_power_price_replace = batt_power_price * 0.5
-    batt_cap_price_replace = batt_cap_price * 0.5
     replacement_deductions = np.zeros([n_agents,analysis_years+20]) #need a temporary larger array to hold depreciation schedules. Not that schedules may get truncated by analysis years. 
     macrs_7_yr_sch = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])    
     
-    batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_power_price_replace + batt_cap*batt_cap_price_replace).reshape(n_agents, 1)
-    replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
+    # This is the actual, future-value calculations
+#    batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh).reshape(n_agents, 1)
+#    replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
     
-    # Problems because of replacement schedule definition
-#    for yr in batt_replacement_sch:
-#        batt_replacement_cf[:,yr] -= batt_power*batt_power_price_replace + batt_cap*batt_cap_price_replace
-#        replacement_deductions[:,yr+1:yr+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
+    # Using present-value of replacement and deduction values, to avoid problems with simple payback calc in NYSERDA analysis
+    batt_replacement_cf[:,0] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) #.reshape(n_agents, 1)
+#    replacement_deductions[:,1:9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch / (1 + real_d)**batt_replacement_sch #this assumes no itc or basis-reducing incentives for batt replacements
+    replacement_deductions[:,0]  = (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) * 0.766112
     
     # Adjust for inflation
     inv_replacement_cf = inv_replacement_cf*inflation_adjustment
-    batt_replacement_cf = batt_replacement_cf*inflation_adjustment
-    deprec_deductions = replacement_deductions[:,:analysis_years+1]*inflation_adjustment
+    batt_replacement_cf = batt_replacement_cf #*inflation_adjustment - inflation temp removed because of present value adjustment
+    deprec_deductions = replacement_deductions[:,:analysis_years+1] #*inflation_adjustment
     
     cf += inv_replacement_cf + batt_replacement_cf
     
@@ -348,7 +352,7 @@ def calc_payback_vectorized(cfs, tech_lifetime):
     next_year_values = cum_cfs[:, 1:][base_year_mask]
     frac_years = base_year_values/(base_year_values - next_year_values)
     pp_year = base_years_fix + frac_years
-    pp_precise = np.where(no_payback, 30, np.where(instant_payback, 0, pp_year))
+    pp_precise = np.where(no_payback, tech_lifetime, np.where(instant_payback, 0, pp_year))
     
     pp_final = np.array(pp_precise).round(decimals = 3)
     

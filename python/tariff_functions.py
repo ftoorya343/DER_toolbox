@@ -107,6 +107,10 @@ class Tariff:
             self.d_tou_levels = np.zeros([1, 1])
             
             
+            ################ Blank Coincident Peak Structure ##################
+            self.coincident_peak_exists = False            
+
+            
             ######################## Blank Energy Structure ###########################
             self.e_exists = False
             self.e_tou_exists = False
@@ -255,6 +259,9 @@ class Tariff:
                 self.d_tou_prices = np.zeros([1, 1])     
                 self.d_tou_levels = np.zeros([1, 1])
             
+            ######################## No Coincident Peak from URDB #############
+            self.coincident_peak_exists = False
+            
             
             ######################## Repackage Energy Structure ###########################
             if 'energyratestructure' in tariff_original:
@@ -373,6 +380,16 @@ class Tariff:
             self.d_tou_n = d['d_tou_n']
             self.d_tou_prices = d['d_tou_prices']    
             self.d_tou_levels = d['d_tou_levels']
+            
+            #################### Coincident Peak Structure ###########################            
+            if 'coincident_peak_exists' in d: self.coincident_peak_exists = d['coincident_peak_exists']
+            else: self.coincident_peak_exists = False
+            
+            if 'coincident_style' in d: self.coincident_style = d['coincident_style']
+            if 'coincident_hour_def' in d: self.coincident_hour_def = d['coincident_hour_def']
+            if 'coincident_prices' in d: self.coincident_prices = d['coincident_prices']
+            if 'coincident_levels' in d: self.coincident_levels = d['coincident_levels']
+            if 'coincident_monthly_periods' in d: self.coincident_monthly_periods = d['coincident_monthly_periods']
             
             
             ######################## Blank Energy Structure ###########################
@@ -549,7 +566,9 @@ def bill_calculator(load_profile, tariff, export_tariff):
         month_index[month_hours[month-1]:hours] = month-1
         
     
-    ###################### Calculate TOU Demand Charges ###########################
+    #=========================================================================#
+    ################## Calculate TOU Demand Charges ###########################
+    #=========================================================================#
     if tariff.d_tou_exists == True:
         # Cast the TOU periods into a boolean matrix
         period_matrix = np.zeros([n_timesteps, tariff.d_tou_n*n_months], bool)
@@ -569,7 +588,9 @@ def bill_calculator(load_profile, tariff, export_tariff):
         d_TOU_month_total_charges = np.zeros([n_months])
         period_maxs = np.zeros(0)
         
-    ################ Calculate Flat Demand Charges ############################
+    #=========================================================================#
+    ################# Calculate Flat Demand Charges ###########################
+    #=========================================================================#
     if tariff.d_flat_exists == True:
         # Cast the seasons into a boolean matrix
         flat_matrix = np.zeros([n_timesteps, n_months], bool)
@@ -583,8 +604,29 @@ def bill_calculator(load_profile, tariff, export_tariff):
     else:
         flat_charges = np.zeros([n_months])
         flat_maxs = np.zeros(0)
+        
+    #=========================================================================#
+    ############# Calculate Coincident Peak Demand Charges ####################
+    #=========================================================================#
+    if tariff.coincident_peak_exists == True:
+        if tariff.coincident_style == 0:
+            # Input is a n by m array. Each row is a peak period and each set
+            # of columns are the hours that define that period. For example,
+            # [[100,200],[5100,5200]] would have two periods that are defined
+            # by the average demand of hours [100,200] and [5100,5200]
+            # respectively.
+            # Coincident_monthly_periods is a 12-length array that maps the 
+            # charges to the billing periods.
+            coincident_demand_levels = np.average(load_profile[tariff.coincident_hour_def], 1)
+            coincident_charges = tiered_calc_vec(coincident_demand_levels, tariff.coincident_levels, tariff.coincident_prices)
+            coincident_monthly_charges = coincident_charges[tariff.coincident_monthly_periods]
+    else:
+        coincident_monthly_charges = np.zeros(12)
+        coincident_demand_levels = None
     
-    ################ Calculate Energy Charges ############################
+    #=========================================================================#
+    #################### Calculate Energy Charges #############################
+    #=========================================================================#
     # Calculate energy charges without full retail NEM    
     if export_tariff.full_retail_nem == False:
         imported_profile = np.clip(load_profile, 0, 1e99)
@@ -667,7 +709,7 @@ def bill_calculator(load_profile, tariff, export_tariff):
         
         e_period_import_sums = 'placeholder'
         
-    total_monthly_bills = d_TOU_month_total_charges + flat_charges + e_month_total_net_charges + tariff.fixed_charge
+    total_monthly_bills = d_TOU_month_total_charges + flat_charges + coincident_monthly_charges + e_month_total_net_charges + tariff.fixed_charge
     annual_bill = sum(total_monthly_bills)
         
     results_dict = {'annual_bill':annual_bill,
@@ -684,11 +726,12 @@ def bill_calculator(load_profile, tariff, export_tariff):
                     'monthly_kW_maxs':flat_maxs,
                     'period_e_charges':e_period_charges,
                     'period_e_sums':e_period_sums,
-                    'e_period_import_sums':e_period_import_sums
+                    'e_period_import_sums':e_period_import_sums,
+                    'coincident_monthly_charges':coincident_monthly_charges,
+                    'coincident_demand_levels':coincident_demand_levels
                     }
     
     return annual_bill, results_dict
-    
 
 #%%
 class export_tariff:

@@ -43,16 +43,16 @@ class Battery:
     def set_cycle_deg(self, cycles):
     
         if cycles < 2300:
-            deg_coeff = (-8e-12*cycles**3 + 5e-8*cycles**2 - 0.0002*cycles + 0.9997)
+            deg_coeff = (-7.5e-12*cycles**3 + 4.84e-8*cycles**2 - 0.0001505*cycles + 0.9997)
         else:
-            deg_coeff = -8e-5*cycles + 1.0094
+            deg_coeff = -8.24e-5*cycles + 1.0094
 
         self.effective_cap = deg_coeff * self.nameplate_cap
         self.effective_power = deg_coeff * (1 - (1-deg_coeff)*1.25) * self.nameplate_power
     
 
 #%%
-def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50, DP_inc=50, estimator_params=None, estimated=False):
+def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff, d_inc_n=50, DP_inc=50, estimator_params=None, estimated=False, restrict_charge_to_pv_gen=False):
     '''
     Function that determines the optimal dispatch of the battery, and in the
     process determines the resulting first year bill with the system.
@@ -90,8 +90,9 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
     
     
     '''
+    load_and_pv_profile = load_profile - pv_profile
     if batt.effective_cap == 0.0:
-        opt_load_traj = load_profile
+        opt_load_traj = load_and_pv_profile
         bill_under_dispatch, _ = tFuncs.bill_calculator(opt_load_traj, t, export_tariff)
         demand_max_exceeded = False
 
@@ -102,19 +103,19 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
         #d_inc_n = 100 # Number of demand levels between original and lowest possible that will be explored
         month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760]);
         cheapest_possible_demands = np.zeros((12,t.d_tou_n+1), float)
-        demand_max_profile = np.zeros(len(load_profile), float)
+        demand_max_profile = np.zeros(len(load_and_pv_profile), float)
         
         # Determine the cheapest possible set of demands for each month, and create an annual profile of those demands
         for month in range(12):
             # Extract the load profile for only the month under consideration
-            load_profile_month = load_profile[month_hours[month]:month_hours[month+1]]
+            load_and_pv_profile_month = load_and_pv_profile[month_hours[month]:month_hours[month+1]]
+            pv_profile_month = pv_profile[month_hours[month]:month_hours[month+1]]
             d_tou_month_periods = t.d_tou_8760[month_hours[month]:month_hours[month+1]]
             
             # columns [:-1] of cheapest_possible_demands are the achievable demand levels, column [-1] is the cost
             # d_max_vector is an hourly vector of the demand level of that period (to become a max constraint in the DP), which is cast into an 8760 for the year.
-            cheapest_possible_demands[month,:], d_max_vector = calc_min_possible_demands(d_inc_n, load_profile_month, d_tou_month_periods, batt, t, month)
+            cheapest_possible_demands[month,:], d_max_vector = calc_min_possible_demands(d_inc_n, load_and_pv_profile_month, pv_profile_month, d_tou_month_periods, batt, t, month, restrict_charge_to_pv_gen)
             demand_max_profile[month_hours[month]:month_hours[month+1]] = d_max_vector
-            
         
         # =================================================================== #
         # Complete (not estimated) dispatch of battery with dynamic programming    
@@ -123,7 +124,7 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
             DP_res = batt.effective_cap / (DP_inc-1)
             illegal = 99999999
             
-            batt_influence_to_achieve_demand_max = demand_max_profile - load_profile
+            batt_influence_to_achieve_demand_max = demand_max_profile - load_and_pv_profile
             batt_influence_to_achieve_demand_max = np.clip(batt_influence_to_achieve_demand_max, -batt.effective_power, batt.effective_power) #The clip might not be necessary, since I mod anyway. 
             
             batt_actions_to_achieve_demand_max = np.array([s*batt.eta_charge if s >= 0 else s/batt.eta_discharge for s in batt_influence_to_achieve_demand_max], float)
@@ -189,10 +190,10 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
             
             # Initialize some objects for later use in the DP
             expected_value_n = DP_inc+1
-            expected_values = np.zeros((expected_value_n, np.size(load_profile)), float)
-            DP_choices = np.zeros((DP_inc+1, np.size(load_profile)), int)
+            expected_values = np.zeros((expected_value_n, np.size(load_and_pv_profile)), float)
+            DP_choices = np.zeros((DP_inc+1, np.size(load_and_pv_profile)), int)
             influence_on_load = np.zeros(np.shape(base_change_in_batt_level_matrix), float)
-            selected_net_loads = np.zeros((DP_inc+1, np.size(load_profile)), float)
+            selected_net_loads = np.zeros((DP_inc+1, np.size(load_and_pv_profile)), float)
             
             # Expected value of final states is the energy required to fill the battery up
             # at the most expensive electricity rate. This encourages ending with a full
@@ -218,7 +219,7 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
             ###################################################################
             ############### Dynamic Programming Energy Trajectory #############
             
-            for hour in np.arange(np.size(load_profile)-2, -1, -1):
+            for hour in np.arange(np.size(load_and_pv_profile)-2, -1, -1):
                 # Rows correspond to each possible battery state
                 # Columns are options for where this particular battery state could go to
                 # Index is hour+1 because the DP decisions are on a given hour, looking ahead to the next hour. 
@@ -243,7 +244,7 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
                 influence_on_load += (change_in_batt_level_matrix/batt.eta_charge) * charging_bool
                 influence_on_load -= 0.000000001 # because of rounding error? Problems definitely occur (sometimes) without this adjustment. The adjustment magnitude has not been tuned since moving away from ints.
                 
-                net_loads = load_profile[hour+1] + influence_on_load
+                net_loads = load_and_pv_profile[hour+1] + influence_on_load
             
                 # I may also need to filter for moves the battery can't actually make
                 
@@ -278,54 +279,59 @@ def determine_optimal_dispatch(load_profile, batt, t, export_tariff, d_inc_n=50,
                 DP_choices[:,hour] = np.argmin(total_option_costs,1) - batt_discharge_limit # adjust by discharge?
                 selected_net_loads[:,hour] = net_loads[range(DP_inc+1),np.argmin(total_option_costs,1)]
                 
+                
+            #=================================================================#
+            ################## Reconstruct trajectories #######################
+            #=================================================================#
             # Determine what the indexes of the optimal trajectory were.
             # Start at the 0th hour, imposing a full battery.
             # traj_i is the indexes of the battery's trajectory.
-            traj_i = np.zeros(len(load_profile), int)
+            traj_i = np.zeros(len(load_and_pv_profile), int)
             traj_i[0] = DP_inc-1
-            for n in range(len(load_profile)-1):
+            for n in range(len(load_and_pv_profile)-1):
                 traj_i[n+1] = traj_i[n] + DP_choices[int(traj_i[n]), n]
             
-            opt_load_traj = np.zeros(len(load_profile), float)
-            for n in range(len(load_profile)-1):
-                opt_load_traj[n+1] = selected_net_loads[traj_i[n], n] 
-                
-            opt_batt_traj = np.zeros(len(load_profile))
-            opt_batt_traj_f = np.zeros(len(load_profile))
-            for n in range(len(load_profile)-1):
-                opt_batt_traj[n] = batt_levels[traj_i[n], n]
-                
-                
-            batt_movement = np.zeros(len(load_profile))
-            for n in np.arange(1,len(load_profile)-1,1):
-                batt_movement[n] = opt_batt_traj[n] - opt_batt_traj[n-1]
-                
-            batt_influence_on_load = np.array([s/batt.eta_charge if s >= 0 else s*batt.eta_discharge for s in batt_movement], float)
+            opt_load_traj = np.zeros(len(load_and_pv_profile), float)
+            for n in range(len(load_and_pv_profile)-1):
+                opt_load_traj[n+1] = selected_net_loads[traj_i[n], n]             
             
-            opt_net_profile = load_profile + batt_influence_on_load
-            
-            # This isn't strictly necessary
+            # This is now necessary in some cases, because coincident peak
+            # charges are not calculated in the dispatch
             bill_under_dispatch, _ = tFuncs.bill_calculator(opt_load_traj, t, export_tariff)
             demand_max_exceeded = np.any(opt_load_traj[1:] > demand_max_profile[1:])
-            
         
+        #=====================================================================#
+        ##################### Estimate Bill Savings ###########################
+        #=====================================================================#
         elif estimated == True:
+            
+            if t.coincident_peak_exists == True:
+                if t.coincident_style == 0:
+                    coincident_demand_levels = np.average(load_profile[t.coincident_hour_def], 1)
+                    coincident_charges = tFuncs.tiered_calc_vec(coincident_demand_levels, t.coincident_levels, t.coincident_prices)
+                    coincident_monthly_charges = coincident_charges[t.coincident_monthly_periods]
+                    coincident_charges = np.sum(coincident_monthly_charges)
+            else:
+                coincident_charges = 0
+            
             batt_arbitrage_value = estimate_annual_arbitrage_profit(batt.effective_power, batt.effective_cap, batt.eta_charge, batt.eta_discharge, estimator_params['cost_sum'], estimator_params['revenue_sum'])                
-            bill_under_dispatch = sum(cheapest_possible_demands[:,-1]) + 12*t.fixed_charge + estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
+            bill_under_dispatch = sum(cheapest_possible_demands[:,-1]) + coincident_charges + 12*t.fixed_charge + estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
             opt_load_traj = None
             #energy_charges = estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
             demand_max_exceeded = False
 
-    ######################### Package Results #################################
+    #=========================================================================#
+    ########################### Package Results ###############################
+    #=========================================================================#
     
-    results = {'opt_load_profile':opt_load_traj,
+    results = {'load_profile_under_dispatch':opt_load_traj,
                'bill_under_dispatch':bill_under_dispatch,
                'demand_max_exceeded':demand_max_exceeded}
                
     return results
 
 #%%
-def calc_min_possible_demands(res, load_profile, d_periods_month, batt, t, month):
+def calc_min_possible_demands(res, load_and_pv_profile, pv_profile, d_periods_month, batt, t, month, restrict_charge_to_pv_gen):
     '''
     Function that determines the minimum possible demands that this battery 
     can achieve for a particular month.
@@ -349,7 +355,7 @@ def calc_min_possible_demands(res, load_profile, d_periods_month, batt, t, month
     original_demands = np.zeros(Dn_month)
     min_possible_demands = np.zeros(Dn_month)
     for period in range(Dn_month):
-        original_demands[period] = np.max(load_profile[d_periods_index==period])
+        original_demands[period] = np.max(load_and_pv_profile[d_periods_index==period])
         min_possible_demands = original_demands - batt.effective_power
             
     # d_ranges is the range of demands in each period that will be investigated
@@ -361,7 +367,7 @@ def calc_min_possible_demands(res, load_profile, d_periods_month, batt, t, month
     # I haven't checked to make sure this is working properly yet
     # At first glance, the diagonal seems to slow quite a bit if period=1, so maybe identify and skip if p=1?
     for n in range(len(d_ranges[:,0])):
-        success = dispatch_pass_fail(load_profile, d_periods_index, d_ranges[n,:], batt)
+        success = dispatch_pass_fail(load_and_pv_profile, pv_profile, d_periods_index, d_ranges[n,:], batt, restrict_charge_to_pv_gen)
         if success == True: 
             i_of_first_success = n
             break
@@ -394,44 +400,45 @@ def calc_min_possible_demands(res, load_profile, d_periods_month, batt, t, month
     
     cheapest_d_states = np.zeros(t.d_tou_n+1)
     for n in range(len(d_combinations[:,0])):
-        success = dispatch_pass_fail(load_profile, d_periods_index, d_combinations[n,:-1], batt)
+        success = dispatch_pass_fail(load_and_pv_profile, pv_profile, d_periods_index, d_combinations[n,:-1], batt, restrict_charge_to_pv_gen)
         if success == True:
             #print "Cheapest possible demand states:", np.round(d_combinations[n,:],1)
             cheapest_d_states[unique_periods] = d_combinations[n,:Dn_month]
             cheapest_d_states[-1] = d_combinations[n,-1]
             break
     
-    d_max_vector = np.zeros(len(d_periods_month))
-    # not correct
-    for p in unique_periods: d_max_vector[d_periods_month==p] = cheapest_d_states[p]
-    #for n in range(len(unique_periods)): d_max_vector[Dper==unique_periods[n]] = cheapest_d_states[n]
-    #cheapest_d_states_all[unique_periods] = cheapest_d_states[]
+    d_max_vector = cheapest_d_states[d_periods_month]
     
-    # Report original demand levels and their total (TOU+seasonal) cost, for reference bill calculation
-    
+    if restrict_charge_to_pv_gen == True:
+        d_max_vector = np.minimum(load_and_pv_profile+pv_profile, d_max_vector)
     
     return cheapest_d_states, d_max_vector
     
 #%%
-def dispatch_pass_fail(load_profile, demand_periods_vector, targets, batt):
+def dispatch_pass_fail(load_and_pv_profile, pv_profile, demand_periods_vector, targets, batt, restrict_charge_to_pv_gen):
     '''
     Function to determine if the battery with the specified power, capacity, and efficiency
     values can achieve the demand levels specified.
     
     INPUTS:
-    load_profile: Original load profile, that the battery will be manipulating
+    load_and_pv_profile: Original load+PV profile, that the battery will be manipulating
     demand_periods_vector = Vector of integer demand periods, equal to the length
                         of the time period under evaluation (typically the hours in a month)
     targets = 
     
     '''
-    demand_vector = [targets[d] for d in demand_periods_vector] # Map the target demands to the hourly vector
-    poss_batt_level_change = demand_vector - load_profile
-    poss_batt_level_change = [batt.effective_power if s>batt.effective_power else s for s in poss_batt_level_change] 
-    poss_batt_level_change = [-batt.effective_power if s<-batt.effective_power else s for s in poss_batt_level_change] 
-    poss_batt_level_change = [s/batt.eta_discharge if s<0 else s*batt.eta_charge for s in poss_batt_level_change]
-    batt_e_level = batt.effective_cap
+    demand_vector = targets[demand_periods_vector]
+    poss_charge = np.minimum(batt.effective_power*batt.eta_charge, (demand_vector-load_and_pv_profile)*batt.eta_charge)
+    if restrict_charge_to_pv_gen == True:
+        poss_charge = np.minimum(poss_charge, pv_profile*batt.eta_charge)
     
+    necessary_discharge = (demand_vector-load_and_pv_profile)/batt.eta_discharge
+    poss_batt_level_change = demand_vector - load_and_pv_profile
+#    poss_batt_level_change = np.clip(poss_batt_level_change, poss_batt_level_change, poss_charge)
+#    poss_batt_level_change = np.clip(poss_batt_level_change, -batt.effective_power/batt.eta_discharge, poss_charge)
+    poss_batt_level_change = np.where(necessary_discharge<0, necessary_discharge, poss_charge)
+
+    batt_e_level = batt.effective_cap
     success = True
     for n in range(len(demand_periods_vector)):
         batt_e_level += poss_batt_level_change[n]
