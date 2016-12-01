@@ -20,7 +20,7 @@ def cashflow_constructor(bill_savings,
                          fed_tax_rate, state_tax_rate, real_d,  
                          analysis_years, inflation, 
                          debt_fraction, loan_rate, loan_term, 
-                         cash_incentives=np.array([0]), ibi=np.array([0]), cbi=np.array([0]), pbi=np.array([0])):
+                         cash_incentives=np.array([0]), ibi=np.array([0]), cbi=np.array([0]), pbi=np.array([[0]])):
     '''
     Accepts financial assumptions and returns the cash flows for the projects.
     Vectorized.
@@ -55,7 +55,6 @@ def cashflow_constructor(bill_savings,
     -add inflation adjustment for replacement prices
     -improve deprec schedule handling
     -Make financing unique to each agent
-    -improve the .reshape(n_agents,1) implementation
     -Make battery replacements depreciation an input, with default of 7 year MACRS
     -Have a better way to deal with capacity vs effective capacity and battery costs
     -make it so it can accept different loan terms
@@ -70,33 +69,34 @@ def cashflow_constructor(bill_savings,
     else: shape = (np.shape(bill_savings)[0], analysis_years+1)
     n_agents = shape[0]
 
-    if np.size(sector) != n_agents or n_agents==1: sector = np.repeat(sector, n_agents)
-    if np.size(fed_tax_rate) != n_agents or n_agents==1: fed_tax_rate = np.repeat(fed_tax_rate, n_agents)
-    if np.size(state_tax_rate) != n_agents or n_agents==1: state_tax_rate = np.repeat(state_tax_rate, n_agents)
-    if np.size(itc) != n_agents or n_agents==1: itc = np.repeat(itc, n_agents)
-    if np.size(pv_size) != n_agents or n_agents==1: pv_size = np.repeat(pv_size, n_agents)
-    if np.size(pv_price) != n_agents or n_agents==1: pv_price = np.repeat(pv_price, n_agents)
-    if np.size(inverter_price) != n_agents or n_agents==1: inverter_price = np.repeat(inverter_price, n_agents)
-    if np.size(pv_om) != n_agents or n_agents==1: pv_om = np.repeat(pv_om, n_agents)
-    if np.size(batt_cap) != n_agents or n_agents==1: batt_cap = np.repeat(batt_cap, n_agents)
-    if np.size(batt_power) != n_agents or n_agents==1: batt_power = np.repeat(batt_power, n_agents)
-    if np.size(batt_cost_per_kw) != n_agents or n_agents==1: batt_cost_per_kw = np.repeat(batt_cost_per_kw, n_agents)
-    if np.size(batt_cost_per_kwh) != n_agents or n_agents==1: batt_cost_per_kwh = np.repeat(batt_cost_per_kwh, n_agents)
-    if np.size(batt_replace_cost_per_kw) != n_agents or n_agents==1: batt_replace_cost_per_kw = np.repeat(batt_replace_cost_per_kw, n_agents)
-    if np.size(batt_replace_cost_per_kwh) != n_agents or n_agents==1: batt_replace_cost_per_kwh = np.repeat(batt_replace_cost_per_kwh, n_agents)
-    if np.size(batt_chg_frac) != n_agents or n_agents==1: batt_chg_frac = np.repeat(batt_chg_frac, n_agents)
-#    if np.size(batt_replacement_sch) != n_agents: batt_replacement_sch = np.repeat(batt_replacement_sch, n_agents)
-    if np.size(batt_om) != n_agents or n_agents==1: batt_om = np.repeat(batt_om, n_agents)
-    if np.size(real_d) != n_agents or n_agents==1: real_d = np.repeat(real_d, n_agents)
-    if np.size(debt_fraction) != n_agents or n_agents==1: debt_fraction = np.repeat(debt_fraction, n_agents)
-    if np.size(loan_rate) != n_agents or n_agents==1: loan_rate = np.repeat(loan_rate, n_agents)
-#    if len(loan_term) != n_agents: loan_term = np.repeat(loan_term, n_agents)
-    if np.size(ibi) != n_agents or n_agents==1: ibi = np.repeat(ibi, n_agents)
-    if np.size(cbi) != n_agents or n_agents==1: cbi = np.repeat(cbi, n_agents)
-    if np.size(pbi) != n_agents or n_agents==1: pbi = np.repeat(pbi, n_agents)
-    if deprec_sched.ndim == 1 or n_agents==1: deprec_sched = np.array([deprec_sched])
-
+    if np.size(sector) != n_agents or n_agents==1: sector = np.repeat(sector, n_agents) 
+    if np.size(fed_tax_rate) != n_agents or n_agents==1: fed_tax_rate = np.repeat(fed_tax_rate, n_agents) 
+    if np.size(state_tax_rate) != n_agents or n_agents==1: state_tax_rate = np.repeat(state_tax_rate, n_agents) 
+    if np.size(itc) != n_agents or n_agents==1: itc = np.repeat(itc, n_agents) 
+    if np.size(pv_size) != n_agents or n_agents==1: pv_size = np.repeat(pv_size, n_agents) 
+    if np.size(pv_price) != n_agents or n_agents==1: pv_price = np.repeat(pv_price, n_agents) 
+    if np.size(inverter_price) != n_agents or n_agents==1: inverter_price = np.repeat(inverter_price, n_agents) 
+    if np.size(pv_om) != n_agents or n_agents==1: pv_om = np.repeat(pv_om, n_agents) 
+    if np.size(batt_cap) != n_agents or n_agents==1: batt_cap = np.repeat(batt_cap, n_agents) 
+    if np.size(batt_power) != n_agents or n_agents==1: batt_power = np.repeat(batt_power, n_agents) 
+    if np.size(batt_cost_per_kw) != n_agents or n_agents==1: batt_cost_per_kw = np.repeat(batt_cost_per_kw, n_agents) 
+    if np.size(batt_cost_per_kwh) != n_agents or n_agents==1: batt_cost_per_kwh = np.repeat(batt_cost_per_kwh, n_agents) 
+    if np.size(batt_replace_cost_per_kw) != n_agents or n_agents==1: batt_replace_cost_per_kw = np.repeat(batt_replace_cost_per_kw, n_agents) 
+    if np.size(batt_replace_cost_per_kwh) != n_agents or n_agents==1: batt_replace_cost_per_kwh = np.repeat(batt_replace_cost_per_kwh, n_agents) 
+    if np.size(batt_chg_frac) != n_agents or n_agents==1: batt_chg_frac = np.repeat(batt_chg_frac, n_agents) 
+    if np.size(batt_om) != n_agents or n_agents==1: batt_om = np.repeat(batt_om, n_agents) 
+    if np.size(real_d) != n_agents or n_agents==1: real_d = np.repeat(real_d, n_agents) 
+    if np.size(debt_fraction) != n_agents or n_agents==1: debt_fraction = np.repeat(debt_fraction, n_agents) 
+    if np.size(loan_rate) != n_agents or n_agents==1: loan_rate = np.repeat(loan_rate, n_agents) 
+    if np.size(ibi) != n_agents or n_agents==1: ibi = np.repeat(ibi, n_agents) 
+    if np.size(cbi) != n_agents or n_agents==1: cbi = np.repeat(cbi, n_agents) 
     
+    
+    if np.size(pbi) != n_agents or n_agents==1: pbi = np.repeat(pbi, n_agents)[:,np.newaxis]
+    if deprec_sched.ndim == 1 or n_agents==1: deprec_sched = np.array([deprec_sched])
+#    if len(loan_term) != n_agents: loan_term = np.repeat(loan_term, n_agents)
+#    if np.size(batt_replacement_sch) != n_agents: batt_replacement_sch = np.repeat(batt_replacement_sch, n_agents)
+
     #################### Setup #########################################
     effective_tax_rate = fed_tax_rate * (1 - state_tax_rate) + state_tax_rate
     nom_d = (1 + real_d) * (1 + inflation) - 1
@@ -109,8 +109,8 @@ def cashflow_constructor(bill_savings,
     # O&M expense to reduce federal and state taxable income.
     bill_savings = bill_savings*inflation_adjustment # Adjust for inflation
     after_tax_bill_savings = np.zeros(shape)
-    after_tax_bill_savings = bill_savings * (1 - (sector!='res').reshape(n_agents,1)*effective_tax_rate.reshape(n_agents,1)) # reduce value of savings because they could have otherwise be written off as operating expenses
-        
+    after_tax_bill_savings = (bill_savings.T * (1 - (sector!='res')*effective_tax_rate)).T # reduce value of savings because they could have otherwise be written off as operating expenses
+
     cf += bill_savings
     
     #################### Installed Costs ######################################
@@ -135,16 +135,17 @@ def cashflow_constructor(bill_savings,
     # Battery replacements
     # Assumes battery replacements can harness 7 year MACRS depreciation
     replacement_deductions = np.zeros([n_agents,analysis_years+20]) #need a temporary larger array to hold depreciation schedules. Not that schedules may get truncated by analysis years. 
-    macrs_7_yr_sch = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])    
+    macrs_7_yr_sch = np.zeros([n_agents, 8])
+    macrs_7_yr_sch[:,:] = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])    
     
-    # This is the actual, future-value calculations
-#    batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh).reshape(n_agents, 1)
-#    replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch #this assumes no itc or basis-reducing incentives for batt replacements
-    
-    # Using present-value of replacement and deduction values, to avoid problems with simple payback calc in NYSERDA analysis
-    batt_replacement_cf[:,0] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) #.reshape(n_agents, 1)
-#    replacement_deductions[:,1:9] = batt_cost.reshape(n_agents,1) * macrs_7_yr_sch / (1 + real_d)**batt_replacement_sch #this assumes no itc or basis-reducing incentives for batt replacements
-    replacement_deductions[:,0]  = (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) * 0.766112
+    if True:
+        # Actual future-value replacement cashflow analysis
+        batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh)
+        replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = (batt_cost * macrs_7_yr_sch.T).T #this assumes no itc or basis-reducing incentives for batt replacements
+    else:
+        # Using present-value of replacement and deduction values, to avoid problems with simple payback calc in NYSERDA analysis
+        batt_replacement_cf[:,0] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) #.reshape(n_agents, 1)
+        replacement_deductions[:,0]  = (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) * 0.766112
     
     # Adjust for inflation
     inv_replacement_cf = inv_replacement_cf*inflation_adjustment
@@ -158,7 +159,7 @@ def cashflow_constructor(bill_savings,
     # currently only includes O&M.
     # All operating expenses increase with inflation
     operating_expenses_cf = np.zeros(shape)
-    operating_expenses_cf[:,1:] = (pv_om * pv_size + batt_om * batt_cap).reshape(n_agents,1)
+    operating_expenses_cf[:,1:] = (pv_om * pv_size + batt_om * batt_cap).reshape(n_agents, 1)
     operating_expenses_cf = operating_expenses_cf*inflation_adjustment
     cf -= operating_expenses_cf
     
@@ -173,7 +174,7 @@ def cashflow_constructor(bill_savings,
     # construction financing costs, less 50% of ITC and any incentives that
     # reduce the depreciable basis.
     deprec_basis = installed_cost - itc_value*0.5 
-    deprec_deductions[:,1:np.size(deprec_sched,1)+1] = deprec_basis.reshape(n_agents,1) * deprec_sched
+    deprec_deductions[:,1:np.size(deprec_sched,1)+1] = (deprec_basis * deprec_sched.T).T
     # to be used later in fed tax calcs
     
     #################### Debt cash flow #######################################
@@ -189,9 +190,9 @@ def cashflow_constructor(bill_savings,
     interest_payments = np.zeros(shape)
     principal_and_interest_payments = np.zeros(shape)
     
-    debt_balance[:,:loan_term] = initial_debt.reshape(n_agents,1)*((1+loan_rate).reshape(n_agents,1)**np.arange(loan_term)) - (annual_principal_and_interest_payment.reshape(n_agents,1)*(((1+loan_rate).reshape(n_agents,1)**np.arange(loan_term) - 1.0)/loan_rate.reshape(n_agents,1)))  
-    interest_payments[:,1:] = debt_balance[:,:-1] * loan_rate.reshape(n_agents,1)
-    principal_and_interest_payments[:,1:loan_term+1] = annual_principal_and_interest_payment.reshape(n_agents,1)
+    debt_balance[:,:loan_term] = (initial_debt*((1+loan_rate.reshape(n_agents,1))**np.arange(loan_term)).T).T - (annual_principal_and_interest_payment*(((1+loan_rate).reshape(n_agents,1)**np.arange(loan_term) - 1.0)/loan_rate.reshape(n_agents,1)).T).T  
+    interest_payments[:,1:] = (debt_balance[:,:-1].T * loan_rate).T
+    principal_and_interest_payments[:,1:loan_term+1] = annual_principal_and_interest_payment.reshape(n_agents, 1)
     
     cf -= principal_and_interest_payments
     
@@ -202,15 +203,15 @@ def cashflow_constructor(bill_savings,
     # Assumes that revenue from DG is not taxable income
     total_taxable_income = np.zeros(shape)
     total_taxable_income[:,1] = cbi
-    total_taxable_income += pbi.reshape(n_agents,1)
+    total_taxable_income[:,:np.shape(pbi)[1]] += pbi
     
     state_deductions = np.zeros(shape)
-    state_deductions += interest_payments * (sector!='res').reshape(n_agents,1)
-    state_deductions += operating_expenses_cf * (sector!='res').reshape(n_agents,1)
+    state_deductions += (interest_payments.T * (sector!='res')).T
+    state_deductions += (operating_expenses_cf.T * (sector!='res')).T
     state_deductions -= bill_savings
     
     total_taxable_state_income_less_deductions = total_taxable_income - state_deductions
-    state_income_taxes = total_taxable_state_income_less_deductions * state_tax_rate.reshape(n_agents,1)
+    state_income_taxes = (total_taxable_state_income_less_deductions.T * state_tax_rate).T
     
     state_tax_savings_or_liability = -state_income_taxes
     
@@ -219,14 +220,14 @@ def cashflow_constructor(bill_savings,
     ################## Federal Income Tax #########################################
     # Assumes all deductions are federal
     fed_deductions = np.zeros(shape)
-    fed_deductions += interest_payments * (sector!='res').reshape(n_agents,1)
-    fed_deductions += deprec_deductions * (sector!='res').reshape(n_agents,1)
+    fed_deductions += (interest_payments.T * (sector!='res')).T
+    fed_deductions += (deprec_deductions.T * (sector!='res')).T
     fed_deductions += state_income_taxes
-    fed_deductions += operating_expenses_cf * (sector!='res').reshape(n_agents,1)
+    fed_deductions += (operating_expenses_cf.T * (sector!='res')).T
     fed_deductions -= bill_savings
     
     total_taxable_fed_income_less_deductions = total_taxable_income - fed_deductions
-    fed_income_taxes = total_taxable_fed_income_less_deductions * fed_tax_rate.reshape(n_agents,1)
+    fed_income_taxes = (total_taxable_fed_income_less_deductions.T * fed_tax_rate).T
     
     fed_tax_savings_or_liability_less_itc = -fed_income_taxes
     
@@ -235,10 +236,10 @@ def cashflow_constructor(bill_savings,
     
     
     ######################## Packaging tax outputs ############################
-    interest_payments_tax_savings = interest_payments * effective_tax_rate.reshape(n_agents,1)
-    operating_expenses_tax_savings = operating_expenses_cf * effective_tax_rate.reshape(n_agents,1)
-    deprec_deductions_tax_savings = deprec_deductions * fed_tax_rate.reshape(n_agents,1)    
-    elec_OM_deduction_decrease_tax_liability = bill_savings * effective_tax_rate.reshape(n_agents,1)
+    interest_payments_tax_savings = (interest_payments.T * effective_tax_rate).T
+    operating_expenses_tax_savings = (operating_expenses_cf.T * effective_tax_rate).T
+    deprec_deductions_tax_savings = (deprec_deductions.T * fed_tax_rate).T    
+    elec_OM_deduction_decrease_tax_liability = (bill_savings.T * effective_tax_rate).T
     
     ########################### Post Processing ###############################
     
@@ -251,7 +252,7 @@ def cashflow_constructor(bill_savings,
     powers = np.zeros(shape, int)
     powers[:,:] = np.array(range(analysis_years+1))
     discounts = np.zeros(shape, float)
-    discounts[:,:] = (1/(1+nom_d)).reshape(n_agents,1)
+    discounts[:,:] = (1/(1+nom_d)).reshape(n_agents, 1)
     cf_discounted = cf * np.power(discounts, powers)
     npv = np.sum(cf_discounted, 1)
     

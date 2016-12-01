@@ -104,8 +104,10 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
         month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760]);
         cheapest_possible_demands = np.zeros((12,t.d_tou_n+1), float)
         demand_max_profile = np.zeros(len(load_and_pv_profile), float)
+        batt_level_profile = np.zeros(len(load_and_pv_profile), float)
         
         # Determine the cheapest possible set of demands for each month, and create an annual profile of those demands
+        batt_start_level = batt.effective_cap
         for month in range(12):
             # Extract the load profile for only the month under consideration
             load_and_pv_profile_month = load_and_pv_profile[month_hours[month]:month_hours[month+1]]
@@ -114,8 +116,10 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             
             # columns [:-1] of cheapest_possible_demands are the achievable demand levels, column [-1] is the cost
             # d_max_vector is an hourly vector of the demand level of that period (to become a max constraint in the DP), which is cast into an 8760 for the year.
-            cheapest_possible_demands[month,:], d_max_vector = calc_min_possible_demands(d_inc_n, load_and_pv_profile_month, pv_profile_month, d_tou_month_periods, batt, t, month, restrict_charge_to_pv_gen)
+            cheapest_possible_demands[month,:], d_max_vector, batt_level_month = calc_min_possible_demands_vector(d_inc_n, load_and_pv_profile_month, pv_profile_month, d_tou_month_periods, batt, t, month, restrict_charge_to_pv_gen, batt_start_level)
             demand_max_profile[month_hours[month]:month_hours[month+1]] = d_max_vector
+            batt_level_profile[month_hours[month]:month_hours[month+1]] = batt_level_month
+            batt_start_level = batt_level_month[-1]
         
         # =================================================================== #
         # Complete (not estimated) dispatch of battery with dynamic programming    
@@ -124,24 +128,29 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             DP_res = batt.effective_cap / (DP_inc-1)
             illegal = 99999999
             
-            batt_influence_to_achieve_demand_max = demand_max_profile - load_and_pv_profile
-            batt_influence_to_achieve_demand_max = np.clip(batt_influence_to_achieve_demand_max, -batt.effective_power, batt.effective_power) #The clip might not be necessary, since I mod anyway. 
-            
-            batt_actions_to_achieve_demand_max = np.array([s*batt.eta_charge if s >= 0 else s/batt.eta_discharge for s in batt_influence_to_achieve_demand_max], float)
-            
-            # Build offset
-            batt_e_levels = np.zeros(len(batt_actions_to_achieve_demand_max), float)
-            batt_e_levels[-1] = 0 #or maybe zero?
-            for hour in np.arange(len(batt_actions_to_achieve_demand_max)-2,-1,-1):
-                batt_e_levels[hour] = batt_e_levels[hour+1] - batt_actions_to_achieve_demand_max[hour+1]
-                if batt_e_levels[hour] < 0: 
-                    batt_e_levels[hour] = 0 # This might not be necessary
-                elif batt_e_levels[hour] > batt.effective_cap: 
-                    batt_e_levels[hour] = batt.effective_cap
-            
-            batt_actions_to_achieve_demand_max = np.zeros(len(batt_actions_to_achieve_demand_max), float)
-            for hour in np.arange(len(batt_actions_to_achieve_demand_max)-2,-1,-1):
-                batt_actions_to_achieve_demand_max[hour+1] = batt_e_levels[hour+1] - batt_e_levels[hour]
+            # Old code from when I used to re-build the battery level profile, 
+            # before I realized I could use the demand max function to generate it.
+#            batt_influence_to_achieve_demand_max = demand_max_profile - load_and_pv_profile
+#            batt_influence_to_achieve_demand_max = np.clip(batt_influence_to_achieve_demand_max, -batt.effective_power, batt.effective_power) #The clip might not be necessary, since I mod anyway. 
+#            
+#            batt_actions_to_achieve_demand_max = np.array([s*batt.eta_charge if s >= 0 else s/batt.eta_discharge for s in batt_influence_to_achieve_demand_max], float)
+#            
+#            # Build offset
+#            batt_e_levels = np.zeros(len(batt_actions_to_achieve_demand_max), float)
+#            batt_e_levels[-1] = 0 #or maybe zero?
+#            for hour in np.arange(len(batt_actions_to_achieve_demand_max)-2,-1,-1):
+#                batt_e_levels[hour] = batt_e_levels[hour+1] - batt_actions_to_achieve_demand_max[hour+1]
+#                if batt_e_levels[hour] < 0: 
+#                    batt_e_levels[hour] = 0 # This might not be necessary
+#                elif batt_e_levels[hour] > batt.effective_cap: 
+#                    batt_e_levels[hour] = batt.effective_cap
+#            
+#            batt_actions_to_achieve_demand_max = np.zeros(len(batt_actions_to_achieve_demand_max), float)
+#            for hour in np.arange(len(batt_actions_to_achieve_demand_max)-2,-1,-1):
+#                batt_actions_to_achieve_demand_max[hour+1] = batt_e_levels[hour+1] - batt_e_levels[hour]
+                
+            batt_actions_to_achieve_demand_max = np.zeros(len(load_profile), float)
+            batt_actions_to_achieve_demand_max[1:-1] = batt_level_profile[1:-1] - batt_level_profile[0:-2]
             
             batt_act_cumsum_mod_rev = np.mod(np.cumsum(batt_actions_to_achieve_demand_max[np.arange(8759,-1,-1)])[np.arange(8759,-1,-1)], DP_res)
                 
@@ -151,7 +160,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             batt_charge_limits_len = batt_charge_limit + batt_discharge_limit + 1
             # the fact the battery row levels aren't anchored anymore hasn't been thought through. How will I make sure my net is aligned?
             
-            batt_levels_n = DP_inc # probably the same as expected_values_n
+            batt_levels_n = DP_inc
             batt_levels_temp = np.zeros([batt_levels_n,8760])
             batt_levels_temp[:,:] = np.linspace(0,batt.effective_cap,batt_levels_n, float).reshape(batt_levels_n,1)
             
@@ -225,7 +234,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                 # Index is hour+1 because the DP decisions are on a given hour, looking ahead to the next hour. 
             
                 # this is beginning of a quicker approach to just adjust the base matrix
-                #change_in_batt_level_matrix = base_change_in_batt_level_matrix + batt_act_cumsum_mod[hour+1] - batt_act_cumsum_mod[hour]
+                #change_in_batt_level_matrix2 = base_change_in_batt_level_matrix + batt_act_cumsum_mod[hour+1] - batt_act_cumsum_mod[hour]
                 
                 # this is just an inefficient but obvious way to assembled this matrix. It should be possible in a few quicker operations.
                 for row in range(batt_levels_n+1):
@@ -349,8 +358,7 @@ def calc_min_possible_demands(res, load_and_pv_profile, pv_profile, d_periods_mo
     Dn_month = len(unique_periods)
     d_periods_index = np.copy(d_periods_month)
     for n in range(len(unique_periods)): d_periods_index[d_periods_month==unique_periods[n]] = n
-     
-     
+         
     # Calculate the original and minimum possible demands in each period
     original_demands = np.zeros(Dn_month)
     min_possible_demands = np.zeros(Dn_month)
@@ -538,3 +546,94 @@ def estimate_annual_arbitrage_profit(power, capacity, eta_charge, eta_discharge,
     annual_arbitrage_profit = revenue - cost
 
     return annual_arbitrage_profit
+    
+    
+#%%
+def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_periods_month, batt, t, month, restrict_charge_to_pv_gen, batt_start_level):
+    '''
+    Function that determines the minimum possible demands that this battery 
+    can achieve for a particular month.
+    
+    Inputs:
+    b: battery class object
+    t: tariff class object
+    
+    to-do:
+    add a vector of forced discharges, for demand response representation
+    
+    '''
+    # Recast d_periods_month vector into d_periods_index, which is in terms of increasing integers starting at zero
+    unique_periods = np.unique(d_periods_month)
+    Dn_month = len(unique_periods)
+    d_periods_index = np.copy(d_periods_month)
+    for n in range(len(unique_periods)): d_periods_index[d_periods_month==unique_periods[n]] = n
+     
+     
+    # Calculate the original and minimum possible demands in each period
+    original_demands = np.zeros(Dn_month)
+    min_possible_demands = np.zeros(Dn_month)
+    for period in range(Dn_month):
+        original_demands[period] = np.max(load_and_pv_profile[d_periods_index==period])
+        min_possible_demands = original_demands - batt.effective_power
+            
+    # d_ranges is the range of demands in each period that will be investigated
+    d_ranges = np.zeros((res,Dn_month), float)
+    for n in range(Dn_month):
+        d_ranges[:,n] = np.linspace(min_possible_demands[n], original_demands[n], res)
+        
+    # Assemble a list of all combinations of demand levels within the ranges of 
+    # interest, calculate their demand charges, and sort by increasing cost
+    d_combo_n = res**len(unique_periods)
+    d_combinations = np.zeros((d_combo_n,Dn_month+1), float)
+    d_combinations[:,:Dn_month] = gFuncs.cartesian([np.asarray(d_ranges[:,x]) for x in range(Dn_month)])
+    TOU_demand_charge = np.sum(tFuncs.tiered_calc_vec(d_combinations[:,:Dn_month], t.d_tou_levels[:,unique_periods], t.d_tou_prices[:,unique_periods]),1) #check that periods line up with rate
+    monthly_demand_charge = tFuncs.tiered_calc_vec(np.max(d_combinations[:,:Dn_month],1), t.d_flat_levels[:,month], t.d_flat_prices[:,month])
+    d_combinations[:,-1] = TOU_demand_charge + monthly_demand_charge 
+    
+    # These next several steps are sorting first by ascending cost, and then
+    # by descending value of the lowest cost period (in an effort to catch a zero-cost period)
+    # Without this, it would solve for the highest-demand zero-cost period value that
+    # could still meet the other period's requirements, which would then result in unnecessary 
+    # dispatching to peak shaving during zero-cost periods. 
+    # invert sign so that the sorting will work...
+    d_combinations[:,:-1] = -d_combinations[:,:-1]
+    
+    d_tou_costs = np.sum(t.d_tou_prices[:,unique_periods], 0)
+    i_min = np.argmin(d_tou_costs)
+    d_combinations = d_combinations[np.lexsort((d_combinations[:,i_min], d_combinations[:,-1]))]
+
+    # invert back...
+    d_combinations[:,:-1] = -d_combinations[:,:-1]
+    
+
+    demand_vectors = d_combinations[:,:Dn_month][:, d_periods_index]
+    poss_charge = np.minimum(batt.effective_power*batt.eta_charge, (demand_vectors-load_and_pv_profile)*batt.eta_charge)
+    if restrict_charge_to_pv_gen == True:
+        poss_charge = np.minimum(poss_charge, pv_profile*batt.eta_charge)
+    
+    necessary_discharge = (demand_vectors-load_and_pv_profile)/batt.eta_discharge
+    poss_batt_level_change = demand_vectors - load_and_pv_profile
+    poss_batt_level_change = np.where(necessary_discharge<=0, necessary_discharge, poss_charge)
+
+    # Walk through the battery levels. A negative value in a row means that 
+    # particular constraint is not able to be met under the given conditions.
+    batt_e_levels = np.zeros([d_combo_n, len(d_periods_index)])
+    batt_e_levels[:,0] = batt_start_level
+    for n in np.arange(1, len(d_periods_index)):
+        batt_e_levels[:,n] = batt_e_levels[:,n-1] + poss_batt_level_change[:,n]
+        batt_e_levels[:,n] = np.clip(batt_e_levels[:,n], -99, batt.effective_cap)
+
+    able_to_meet_targets = np.all(batt_e_levels>=0, 1)
+    
+    i_of_first_success = np.argmax(able_to_meet_targets)
+    batt_level_profile = batt_e_levels[i_of_first_success, :]
+    cheapest_d_states = np.zeros(t.d_tou_n+1)
+    cheapest_d_states[unique_periods] = d_combinations[i_of_first_success,:]
+    cheapest_d_states[-1] = d_combinations[i_of_first_success,-1]
+    
+    d_max_vector = cheapest_d_states[d_periods_month]
+    
+    if restrict_charge_to_pv_gen == True:
+        d_max_vector = np.minimum(load_and_pv_profile+pv_profile, d_max_vector)
+    
+    return cheapest_d_states, d_max_vector, batt_level_profile

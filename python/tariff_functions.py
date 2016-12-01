@@ -436,8 +436,8 @@ class Tariff:
             self.kWh_useage_max = dict_obj['kWh_useage_max']
             self.kWh_useage_min = dict_obj['kWh_useage_min']
             self.eia_id = dict_obj['eia_id']
-            self.demand_rate_unit = dict_obj['demand_rate_unit']
-            self.energy_rate_unit = dict_obj['energy_rate_unit']
+            if 'demand_rate_unit' in dict_obj: self.demand_rate_unit = dict_obj['demand_rate_unit']
+            if 'energy_rate_unit' in dict_obj: self.energy_rate_unit = dict_obj['energy_rate_unit']
             
             
             ###################### Flat Demand Structure ########################
@@ -451,6 +451,16 @@ class Tariff:
             self.d_tou_n = dict_obj['d_tou_n']
             self.d_tou_prices = np.array(dict_obj['d_tou_prices'])    
             self.d_tou_levels = np.array(dict_obj['d_tou_levels'])
+            
+            #################### Coincident Peak Structure ###########################            
+            if 'coincident_peak_exists' in dict_obj: self.coincident_peak_exists = dict_obj['coincident_peak_exists']
+            else: self.coincident_peak_exists = False
+            
+            if 'coincident_style' in dict_obj: self.coincident_style = dict_obj['coincident_style']
+            if 'coincident_hour_def' in dict_obj: self.coincident_hour_def = dict_obj['coincident_hour_def']
+            if 'coincident_prices' in dict_obj: self.coincident_prices = dict_obj['coincident_prices']
+            if 'coincident_levels' in dict_obj: self.coincident_levels = dict_obj['coincident_levels']
+            if 'coincident_monthly_periods' in dict_obj: self.coincident_monthly_periods = dict_obj['coincident_monthly_periods']
             
             
             ######################## Energy Structure ###########################
