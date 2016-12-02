@@ -5,7 +5,6 @@ Created on Fri Sep 30 11:26:58 2016
 @author: pgagnon
 
 To Do:
-- I have not checked the 12x24 to 8760 conversion
 """
 
 import requests as req
@@ -508,14 +507,14 @@ class Tariff:
             json.dump(d_prep_for_json, fp)
             
                  
-                 
+#%%     
 class Export_Tariff:
     """
     Structure of compensation for exported generation. Currently only two 
     styles: full-retail NEM, and instantanous TOU energy value. 
     """
     
-    def __init__(self, full_retail_nem, 
+    def __init__(self, full_retail_nem=True, 
                  prices = np.zeros([1, 1], float),
                  levels = np.zeros([1, 1], float),
                  periods_8760 = np.zeros(8760, int),
@@ -743,17 +742,5 @@ def bill_calculator(load_profile, tariff, export_tariff):
     
     return annual_bill, results_dict
 
-#%%
-class export_tariff:
-    """
-    Structure of compensation for exported generation. Currently only two 
-    styles: full-retail NEM, and instantanous TOU energy value. 
-    """
-     
-    full_retail_nem = True
-    prices = np.zeros([1, 1], int)     
-    levels = np.zeros([1, 1], int)
-    periods_8760 = np.zeros(8760, int)
-    period_tou_n = 1
     
 
