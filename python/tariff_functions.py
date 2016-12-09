@@ -16,7 +16,7 @@ import json
 
 #%%
 class Tariff:
-    """Doc goes here
+    """
     Tariff Attributes:
     -urdb_id: id for utility rate database. US, not international. 
     -eia_id: The EIA assigned ID number for the utility associated with this tariff           
@@ -53,7 +53,7 @@ class Tariff:
     -d_tou_8760
     -e_tou_8760
     -e_prices_no_tier
-    -e_max_difference  
+    -e_max_difference: The maximum energy price differential within any single day
     -energy_rate_unit: kWh or kWh/day - for guiding the bill calculations later
     -demand_rate_unit: kW or kW/day - for guiding the bill calculations later
     
@@ -131,8 +131,8 @@ class Tariff:
             
             
             ######################## Precalculations ######################################
-            self.e_prices_no_tier = np.max(self.e_prices, 0) # simplification until something better is implemented
-            self.e_max_difference = np.max(self.e_prices) - np.min(self.e_prices)
+            self.e_prices_no_tier = np.zeros([1, 1])
+            self.e_max_difference = np.zeros([1, 1])
 
         
         #######################################################################
@@ -148,9 +148,6 @@ class Tariff:
             r = req.get('http://api.openei.org/utility_rates?', params=input_params)
             
             tariff_original = r.json()['items'][0]
-
-            if 'demandrateunit' in tariff_original: self.demand_rate_unit = tariff_original['demandrateunit']
-            else: self.demand_rate_unit = 'kW'  
 
             if 'demandrateunit' in tariff_original: self.demand_rate_unit = tariff_original['demandrateunit']
             else: self.demand_rate_unit = 'kW'  
@@ -291,6 +288,7 @@ class Tariff:
                 self.e_n = 0
                 self.e_prices = np.zeros([1, 1])     
                 self.e_levels = np.zeros([1, 1])
+                self.energy_rate_unit = 'kWh'
                 
             ######################## Repackage Energy Schedule ###########################
             self.e_wkday_12by24 = np.zeros([12,24], int)
@@ -334,8 +332,16 @@ class Tariff:
                 if day == 7: day = 0
             
             ######################## Precalculations ######################################
+            # Collapse the tiered price matrix down to just the maximum cost
+            # in each tier, to be used during dispatch.
             self.e_prices_no_tier = np.max(self.e_prices, 0)
-            self.e_max_difference = np.max(self.e_prices) - np.min(self.e_prices)
+            
+            # Determine the maximum differential in energy price within a day.
+            e_12by24_max_prices_wkday = self.e_prices_no_tier[self.e_wkday_12by24]
+            e_12by24_max_prices_wkend = self.e_prices_no_tier[self.e_wkend_12by24]
+            e_max_price_differential_wkday = np.max(e_12by24_max_prices_wkday, 1) - np.min(e_12by24_max_prices_wkday, 1)
+            e_max_price_differential_wkend = np.max(e_12by24_max_prices_wkend, 1) - np.min(e_12by24_max_prices_wkend, 1)
+            self.e_max_difference = np.max([e_max_price_differential_wkday, e_max_price_differential_wkend])
 
         
         #######################################################################
