@@ -355,36 +355,38 @@ class Tariff:
                 if isinstance(d[fieldname], list):
                     d[fieldname] = np.array(d[fieldname])
                 
-            self.urdb_id = d['urdb_id']             
-            self.name = d['name']
-            self.utility = d['utility']
-            self.fixed_charge = d['fixed_charge']
-            self.peak_kW_capacity_max = d['peak_kW_capacity_max']
-            self.peak_kW_capacity_min = d['peak_kW_capacity_min']
-            self.kWh_useage_max = d['kWh_useage_max']
-            self.kWh_useage_min = d['kWh_useage_min']
-            self.sector = d['sector']
-            self.comments = d['comments']
-            self.description = d['description']
-            self.source = d['source']
-            self.uri = d['uri']
-            self.voltage_category = d['voltage_category']
-            self.eia_id = d['eia_id']
-            self.demand_rate_unit = d['demand_rate_unit']
-            self.energy_rate_unit = d['energy_rate_unit']
+            if 'urdb_id' in d: self.urdb_id = d['urdb_id']
+            if 'name' in d: self.name = d['name']
+            if 'utility' in d: self.utility = d['utility']
+            if 'fixed_charge' in d: self.fixed_charge = d['fixed_charge']
+            if 'peak_kW_capacity_max' in d: self.peak_kW_capacity_max = d['peak_kW_capacity_max']
+            if 'peak_kW_capacity_min' in d: self.peak_kW_capacity_min = d['peak_kW_capacity_min']
+            if 'kWh_useage_max' in d: self.kWh_useage_max = d['kWh_useage_max']
+            if 'kWh_useage_min' in d: self.kWh_useage_min = d['kWh_useage_min']
+            if 'sector' in d: self.sector = d['sector']
+            if 'comments' in d: self.comments = d['comments']
+            if 'description' in d: self.description = d['description']
+            if 'source' in d: self.source = d['source']
+            if 'uri' in d: self.uri = d['uri']
+            if 'source' in d: self.source = d['source']
+            if 'voltage_category' in d: self.voltage_category = d['voltage_category']
+            if 'eia_id' in d: self.eia_id = d['eia_id']
+            if 'energy_rate_unit' in d: self.energy_rate_unit = d['energy_rate_unit']
             
             
             ###################### Blank Flat Demand Structure ########################
-            self.d_flat_exists = d['d_flat_exists']
-            self.d_flat_prices = d['d_flat_prices'] 
-            self.d_flat_levels = d['d_flat_levels']
-            self.d_flat_n = d['d_flat_n']
+            if 'd_flat_exists' in d: self.d_flat_exists = d['d_flat_exists']
+            if 'd_flat_prices' in d: self.d_flat_prices = d['d_flat_prices']
+            if 'd_flat_levels' in d: self.d_flat_levels = d['d_flat_levels']
+            if 'd_flat_n' in d: self.d_flat_n = d['d_flat_n']
+                
             
             #################### Blank Demand TOU Structure ###########################
-            self.d_tou_exists = d['d_tou_exists']
-            self.d_tou_n = d['d_tou_n']
-            self.d_tou_prices = d['d_tou_prices']    
-            self.d_tou_levels = d['d_tou_levels']
+            if 'd_tou_exists' in d: self.d_tou_exists = d['d_tou_exists']
+            if 'd_tou_n' in d: self.d_tou_n = d['d_tou_n']
+            if 'd_tou_prices' in d: self.d_tou_prices = d['d_tou_prices']
+            if 'd_tou_levels' in d: self.d_tou_levels = d['d_tou_levels']
+
             
             #################### Coincident Peak Structure ###########################            
             if 'coincident_peak_exists' in d: self.coincident_peak_exists = d['coincident_peak_exists']
@@ -398,29 +400,30 @@ class Tariff:
             
             
             ######################## Blank Energy Structure ###########################
-            self.e_exists = d['e_exists']
-            self.e_tou_exists = d['e_tou_exists']
-            self.e_n = d['e_n']
-            self.e_prices = d['e_prices']   
-            self.e_levels = d['e_levels']
+            if 'e_exists' in d: self.e_exists = d['e_exists']
+            if 'e_tou_exists' in d: self.e_tou_exists = d['e_tou_exists']
+            if 'e_n' in d: self.e_n = d['e_n']
+            if 'e_prices' in d: self.e_prices = d['e_prices']
+            if 'e_levels' in d: self.e_levels = d['e_levels']
             
                 
             ######################## Blank Schedules ###########################
-            self.e_wkday_12by24 = d['e_wkday_12by24']
-            self.e_wkend_12by24 = d['e_wkend_12by24']
-            self.d_wkday_12by24 = d['d_wkday_12by24']
-            self.d_wkend_12by24 = d['d_wkend_12by24']
+            if 'e_wkday_12by24' in d: self.e_wkday_12by24 = d['e_wkday_12by24']
+            if 'e_wkend_12by24' in d: self.e_wkend_12by24 = d['e_wkend_12by24']
+            if 'd_wkday_12by24' in d: self.d_wkday_12by24 = d['d_wkday_12by24']
+            if 'd_wkend_12by24' in d: self.d_wkend_12by24 = d['d_wkend_12by24']
             
             
             ################### Blank 12x24s as 8760s Schedule ########################
-            self.d_tou_8760 = d['d_tou_8760']
-            self.e_tou_8760 = d['e_tou_8760']
+            if 'd_tou_8760' in d: self.d_tou_8760 = d['d_tou_8760']
+            if 'e_tou_8760' in d: self.e_tou_8760 = d['e_tou_8760']
             
             
             ######################## Precalculations ######################################
-            self.e_prices_no_tier = d['e_prices_no_tier'] # simplification until something better is implemented
-            self.e_max_difference = d['e_max_difference']
-            self.start_day = d['start_day']
+            if 'e_prices_no_tier' in d: self.e_prices_no_tier = d['e_prices_no_tier']
+            if 'e_max_difference' in d: self.e_max_difference = d['e_max_difference']
+            if 'start_day' in d: self.start_day = d['start_day']
+
             
         #######################################################################
         # If given a dict input, construct a tariff from that object
@@ -531,6 +534,13 @@ class Export_Tariff:
         self.levels = levels
         self.periods_8760 = periods_8760
         self.period_tou_n = period_tou_n
+        
+    def set_constant_sell_price(self, price):
+        self.full_retail_nem = False
+        self.prices = np.array([[price]], float)
+        self.levels = np.array([[9999999]], float)
+        self.periods_8760 = np.zeros(8760, int),
+        self.period_tou_n = 1
 
 #%%
 def tiered_calc_vec(values, levels, prices):

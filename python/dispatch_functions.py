@@ -74,18 +74,11 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
      the highest index corresponds to a full battery
     
     To Do:
-    -Make it evaluate the bill for the net profile when batt.effective_cap == 0
     -Having cost-to-go equal cost of filling the battery at the end may not be
      working.
     -have warnings for classes of errors. Same for bill calculator, such as when
      net load in a given period is negative
     -either have warnings, or outright nans, when an illegal move is chosen
-    -I see some demand max violations caused by minor dips below the demand_max
-     line, when they occur in an otherwise demanding profile. This can happen
-     when there is a large PV system that causes a mid-day dip. Solution: manually
-     construct an offset vector by reverse cumSum, setting at zero for empty batt
-    -DP trajectory seems mostly correct, except the preference for low-power
-     trajectories doesn't seem to be enforced
     -If there are no demand charges, don't calc & don't have a limit on 
      demand_max_profile for the following dispatch.
     
@@ -94,6 +87,8 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
     load_and_pv_profile = load_profile - pv_profile
     if batt.effective_cap == 0.0:
         opt_load_traj = load_and_pv_profile
+        demand_max_profile = load_and_pv_profile
+        batt_level_profile = np.zeros(len(load_and_pv_profile), float)
         bill_under_dispatch, _ = tFuncs.bill_calculator(opt_load_traj, t, export_tariff)
         demand_max_exceeded = False
 
@@ -103,7 +98,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
         # =================================================================== #
         #d_inc_n = 100 # Number of demand levels between original and lowest possible that will be explored
         month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760]);
-        cheapest_possible_demands = np.zeros((12,t.d_tou_n+1), float)
+        cheapest_possible_demands = np.zeros((12,np.max([t.d_tou_n+1, 2])), float)
         demand_max_profile = np.zeros(len(load_and_pv_profile), float)
         batt_level_profile = np.zeros(len(load_and_pv_profile), float)
         
@@ -327,7 +322,9 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             
             batt_arbitrage_value = estimate_annual_arbitrage_profit(batt.effective_power, batt.effective_cap, batt.eta_charge, batt.eta_discharge, estimator_params['cost_sum'], estimator_params['revenue_sum'])                
             bill_under_dispatch = sum(cheapest_possible_demands[:,-1]) + coincident_charges + 12*t.fixed_charge + estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
-            opt_load_traj = None
+            opt_load_traj = np.zeros([len(load_profile)])
+            demand_max_profile = np.zeros([len(load_profile)])
+            batt_level_profile = np.zeros([len(load_profile)])
             #energy_charges = estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
             demand_max_exceeded = False
 
@@ -629,7 +626,7 @@ def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_per
     if restrict_charge_to_pv_gen == True:
         d_max_vector = np.minimum(load_and_pv_profile+pv_profile, d_max_vector)
     
-    return cheapest_d_states, d_max_vector, batt_level_profile
+    return cheapest_d_states,  d_max_vector, batt_level_profile
     
 #%%
 def determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_profile, unique_periods, d_combinations, d_combo_n, Dn_month, d_periods_index,  batt, restrict_charge_to_pv_gen, batt_start_level, tariff):
@@ -654,7 +651,7 @@ def determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_p
     
     i_of_first_success = np.argmax(able_to_meet_targets)
     batt_level_profile = batt_e_levels[i_of_first_success, :]
-    cheapest_d_states = np.zeros(tariff.d_tou_n+1)
+    cheapest_d_states = np.zeros(np.max([tariff.d_tou_n+1, 2])) # minimum of two, because some tariffs have d_tou_n=0, but still have d_flat
     cheapest_d_states[unique_periods] = d_combinations[i_of_first_success,:-1]
     cheapest_d_states[-1] = d_combinations[i_of_first_success,-1]
     
