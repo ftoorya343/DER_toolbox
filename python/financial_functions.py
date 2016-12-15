@@ -19,7 +19,7 @@ def cashflow_constructor(bill_savings,
                          sector, itc, deprec_sched, 
                          fed_tax_rate, state_tax_rate, real_d,  
                          analysis_years, inflation, 
-                         debt_fraction, loan_rate, loan_term, 
+                         down_payment_fraction, loan_rate, loan_term, 
                          cash_incentives=np.array([0]), ibi=np.array([0]), cbi=np.array([0]), pbi=np.array([[0]])):
     '''
     Accepts financial assumptions and returns the cash flows for the projects.
@@ -86,7 +86,7 @@ def cashflow_constructor(bill_savings,
     if np.size(batt_chg_frac) != n_agents or n_agents==1: batt_chg_frac = np.repeat(batt_chg_frac, n_agents) 
     if np.size(batt_om) != n_agents or n_agents==1: batt_om = np.repeat(batt_om, n_agents) 
     if np.size(real_d) != n_agents or n_agents==1: real_d = np.repeat(real_d, n_agents) 
-    if np.size(debt_fraction) != n_agents or n_agents==1: debt_fraction = np.repeat(debt_fraction, n_agents) 
+    if np.size(down_payment_fraction) != n_agents or n_agents==1: down_payment_fraction = np.repeat(down_payment_fraction, n_agents) 
     if np.size(loan_rate) != n_agents or n_agents==1: loan_rate = np.repeat(loan_rate, n_agents) 
     if np.size(ibi) != n_agents or n_agents==1: ibi = np.repeat(ibi, n_agents) 
     if np.size(cbi) != n_agents or n_agents==1: cbi = np.repeat(cbi, n_agents) 
@@ -120,7 +120,7 @@ def cashflow_constructor(bill_savings,
     batt_cost = batt_power*batt_cost_per_kw + batt_cap*batt_cost_per_kwh
     installed_cost = pv_cost + batt_cost
     net_installed_cost = installed_cost - cash_incentives - ibi - cbi
-    up_front_cost = net_installed_cost * (1 - debt_fraction)
+    up_front_cost = net_installed_cost * down_payment_fraction
     cf[:,0] -= up_front_cost
     
     #################### Replacements #########################################

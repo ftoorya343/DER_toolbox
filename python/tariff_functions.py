@@ -539,7 +539,7 @@ class Export_Tariff:
         self.full_retail_nem = False
         self.prices = np.array([[price]], float)
         self.levels = np.array([[9999999]], float)
-        self.periods_8760 = np.zeros(8760, int),
+        self.periods_8760 = np.zeros(8760, int)
         self.period_tou_n = 1
 
 #%%
