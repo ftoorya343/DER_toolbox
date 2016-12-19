@@ -652,87 +652,94 @@ def bill_calculator(load_profile, tariff, export_tariff):
     #=========================================================================#
     #################### Calculate Energy Charges #############################
     #=========================================================================#
-    # Calculate energy charges without full retail NEM    
-    if export_tariff.full_retail_nem == False:
-        imported_profile = np.clip(load_profile, 0, 1e99)
-        exported_profile = np.clip(load_profile, -1e99, 0)
-
-        # Calculate fixed schedule export_tariff 
-        # Cast the TOU periods into a boolean matrix
-        e_period_export_matrix = np.zeros([len(export_tariff.periods_8760), export_tariff.period_tou_n*n_months], bool)
-        e_period_export_matrix[range(len(export_tariff.periods_8760)),export_tariff.periods_8760+month_index*export_tariff.period_tou_n] = True
-        
-        # Determine the energy consumed in each period of each month of each year
-        load_distributed = exported_profile[np.newaxis, :].T*e_period_export_matrix
-        export_period_sums = np.sum(load_distributed, axis=0)
-        
-        # Calculate the cost of TOU demand charges
-        export_period_credits = tiered_calc_vec(export_period_sums, np.tile(export_tariff.levels[:,0:export_tariff.period_tou_n], 12), np.tile(export_tariff.prices[:,0:export_tariff.period_tou_n], 12))
-        
-        export_month_total_credits = np.zeros([n_months])
-        for month in range(n_months):
-            export_month_total_credits[month] = np.sum(export_period_credits[(month*export_tariff.period_tou_n):(month*export_tariff.period_tou_n + export_tariff.period_tou_n)])        
+    # Calculate energy charges without full retail NEM
+    if tariff.e_exists and tariff.e_n!=0:
+        if export_tariff.full_retail_nem == False:
+            imported_profile = np.clip(load_profile, 0, 1e99)
+            exported_profile = np.clip(load_profile, -1e99, 0)
+    
+            # Calculate fixed schedule export_tariff 
+            # Cast the TOU periods into a boolean matrix
+            e_period_export_matrix = np.zeros([len(export_tariff.periods_8760), export_tariff.period_tou_n*n_months], bool)
+            e_period_export_matrix[range(len(export_tariff.periods_8760)),export_tariff.periods_8760+month_index*export_tariff.period_tou_n] = True
             
-        # Calculate imported energy charges. 
-        # Cast the TOU periods into a boolean matrix
-        e_period_import_matrix = np.zeros([len(tariff.e_tou_8760), tariff.e_n*n_months], bool)
-        e_period_import_matrix[range(len(tariff.e_tou_8760)),tariff.e_tou_8760+month_index*tariff.e_n] = True
-        
-        # Determine the max demand in each period of each month of each year
-        load_distributed = imported_profile[np.newaxis, :].T*e_period_import_matrix
-        e_period_import_sums = np.sum(load_distributed, axis=0)
-        
-        # Calculate the cost of TOU demand charges
-        e_period_import_charges = tiered_calc_vec(e_period_import_sums, np.tile(tariff.e_levels, 12), np.tile(tariff.e_prices, 12))
-        
-        e_month_import_total_charges = np.zeros([n_months])
-        for month in range(n_months):
-            e_month_import_total_charges[month] = np.sum(e_period_import_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
+            # Determine the energy consumed in each period of each month of each year
+            load_distributed = exported_profile[np.newaxis, :].T*e_period_export_matrix
+            export_period_sums = np.sum(load_distributed, axis=0)
             
-        e_month_total_net_charges = e_month_import_total_charges - export_month_total_credits
-
-        # placeholder        
-        e_period_charges = "placeholder"
-        e_period_sums = "placeholder"
-     
-    # Calculate energy charges with full retail NEM 
+            # Calculate the cost of TOU demand charges
+            export_period_credits = tiered_calc_vec(export_period_sums, np.tile(export_tariff.levels[:,0:export_tariff.period_tou_n], 12), np.tile(export_tariff.prices[:,0:export_tariff.period_tou_n], 12))
+            
+            export_month_total_credits = np.zeros([n_months])
+            for month in range(n_months):
+                export_month_total_credits[month] = np.sum(export_period_credits[(month*export_tariff.period_tou_n):(month*export_tariff.period_tou_n + export_tariff.period_tou_n)])        
+                
+            # Calculate imported energy charges. 
+            # Cast the TOU periods into a boolean matrix
+            e_period_import_matrix = np.zeros([len(tariff.e_tou_8760), tariff.e_n*n_months], bool)
+            e_period_import_matrix[range(len(tariff.e_tou_8760)),tariff.e_tou_8760+month_index*tariff.e_n] = True
+            
+            # Determine the max demand in each period of each month of each year
+            load_distributed = imported_profile[np.newaxis, :].T*e_period_import_matrix
+            e_period_import_sums = np.sum(load_distributed, axis=0)
+            
+            # Calculate the cost of TOU demand charges
+            e_period_import_charges = tiered_calc_vec(e_period_import_sums, np.tile(tariff.e_levels, 12), np.tile(tariff.e_prices, 12))
+            
+            e_month_import_total_charges = np.zeros([n_months])
+            for month in range(n_months):
+                e_month_import_total_charges[month] = np.sum(e_period_import_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
+                
+            e_month_total_net_charges = e_month_import_total_charges - export_month_total_credits
+    
+            # placeholder        
+            e_period_charges = "placeholder"
+            e_period_sums = "placeholder"
+         
+        # Calculate energy charges with full retail NEM 
+        else:
+            # Calculate imported energy charges with full retail NEM
+            # Cast the TOU periods into a boolean matrix
+            e_period_matrix = np.zeros([len(tariff.e_tou_8760), tariff.e_n*n_months], bool)
+            e_period_matrix[range(len(tariff.e_tou_8760)),tariff.e_tou_8760+month_index*tariff.e_n] = True
+            
+            # Determine the energy consumed in each period of each month of each year netting exported electricity
+            load_distributed = load_profile[np.newaxis, :].T*e_period_matrix
+            e_period_sums = np.sum(load_distributed, axis=0)
+            
+            # Calculate the cost of TOU energy charges netting exported electricity
+            e_period_charges = tiered_calc_vec(e_period_sums, np.tile(tariff.e_levels, 12), np.tile(tariff.e_prices, 12))
+            
+            e_month_total_net_charges = np.zeros([n_months])
+            for month in range(n_months):
+                e_month_total_net_charges[month] = np.sum(e_period_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
+            
+            # Determine the value of NEM
+            # Calculate imported energy charges with zero exported electricity
+            imported_profile = np.clip(load_profile, 0, 1e99)
+    
+            # Determine the energy consumed in each period of each month of each year - without exported electricity
+            imported_load_distributed = imported_profile[np.newaxis, :].T*e_period_matrix
+            e_period_sums_imported = np.sum(imported_load_distributed, axis=0)
+            
+            # Calculate the cost of TOU energy charges without exported electricity
+            e_period_imported_charges = tiered_calc_vec(e_period_sums_imported, np.tile(tariff.e_levels, 12), np.tile(tariff.e_prices, 12))
+            
+            e_month_total_import_charges = np.zeros([n_months])
+            for month in range(n_months):
+                e_month_total_import_charges[month] = np.sum(e_period_imported_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
+            
+            # Determine how much  the exported electricity was worth by comparing
+            # bills where it was netted against those where it wasn't
+            export_month_total_credits = e_month_total_net_charges - e_month_total_import_charges
+            
+            e_period_import_sums = 'placeholder'
     else:
-        # Calculate imported energy charges with full retail NEM
-        # Cast the TOU periods into a boolean matrix
-        e_period_matrix = np.zeros([len(tariff.e_tou_8760), tariff.e_n*n_months], bool)
-        e_period_matrix[range(len(tariff.e_tou_8760)),tariff.e_tou_8760+month_index*tariff.e_n] = True
-        
-        # Determine the energy consumed in each period of each month of each year netting exported electricity
-        load_distributed = load_profile[np.newaxis, :].T*e_period_matrix
-        e_period_sums = np.sum(load_distributed, axis=0)
-        
-        # Calculate the cost of TOU energy charges netting exported electricity
-        e_period_charges = tiered_calc_vec(e_period_sums, np.tile(tariff.e_levels, 12), np.tile(tariff.e_prices, 12))
-        
-        e_month_total_net_charges = np.zeros([n_months])
-        for month in range(n_months):
-            e_month_total_net_charges[month] = np.sum(e_period_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
-        
-        # Determine the value of NEM
-        # Calculate imported energy charges with zero exported electricity
-        imported_profile = np.clip(load_profile, 0, 1e99)
-
-        # Determine the energy consumed in each period of each month of each year - without exported electricity
-        imported_load_distributed = imported_profile[np.newaxis, :].T*e_period_matrix
-        e_period_sums_imported = np.sum(imported_load_distributed, axis=0)
-        
-        # Calculate the cost of TOU energy charges without exported electricity
-        e_period_imported_charges = tiered_calc_vec(e_period_sums_imported, np.tile(tariff.e_levels, 12), np.tile(tariff.e_prices, 12))
-        
-        e_month_total_import_charges = np.zeros([n_months])
-        for month in range(n_months):
-            e_month_total_import_charges[month] = np.sum(e_period_imported_charges[(month*tariff.e_n):(month*tariff.e_n + tariff.e_n)])
-        
-        # Determine how much  the exported electricity was worth by comparing
-        # bills where it was netted against those where it wasn't
-        export_month_total_credits = e_month_total_net_charges - e_month_total_import_charges
-        
-        e_period_import_sums = 'placeholder'
+        e_month_total_net_charges = np.zeros(12)
+        export_month_total_credits = np.zeros(12)
+        e_period_charges = np.zeros(12*tariff.e_n)
+        e_period_sums = np.zeros(12*tariff.e_n)
+        e_period_import_sums = np.zeros(12*tariff.e_n)
         
     total_monthly_bills = d_TOU_month_total_charges + flat_charges + coincident_monthly_charges + e_month_total_net_charges + tariff.fixed_charge
     annual_bill = sum(total_monthly_bills)
