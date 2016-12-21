@@ -53,7 +53,7 @@ class Battery:
     
 
 #%%
-def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff, d_inc_n=50, DP_inc=50, estimator_params=None, estimated=False, restrict_charge_to_pv_gen=False):
+def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff, d_inc_n=50, DP_inc=50, estimator_params=None, estimated=False, restrict_charge_to_pv_gen=False, estimate_demand_levels=False):
     '''
     Function that determines the optimal dispatch of the battery, and in the
     process determines the resulting first year bill with the system.
@@ -112,7 +112,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             
             # columns [:-1] of cheapest_possible_demands are the achievable demand levels, column [-1] is the cost
             # d_max_vector is an hourly vector of the demand level of that period (to become a max constraint in the DP), which is cast into an 8760 for the year.
-            cheapest_possible_demands[month,:], d_max_vector, batt_level_month = calc_min_possible_demands_vector(d_inc_n, load_and_pv_profile_month, pv_profile_month, d_tou_month_periods, batt, t, month, restrict_charge_to_pv_gen, batt_start_level)
+            cheapest_possible_demands[month,:], d_max_vector, batt_level_month = calc_min_possible_demands_vector(d_inc_n, load_and_pv_profile_month, pv_profile_month, d_tou_month_periods, batt, t, month, restrict_charge_to_pv_gen, batt_start_level, estimate_demand_levels)
             demand_max_profile[month_hours[month]:month_hours[month+1]] = d_max_vector
             batt_level_profile[month_hours[month]:month_hours[month+1]] = batt_level_month
             batt_start_level = batt_level_month[-1]
@@ -545,7 +545,7 @@ def estimate_annual_arbitrage_profit(power, capacity, eta_charge, eta_discharge,
     
     
 #%%
-def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_periods_month, batt, t, month, restrict_charge_to_pv_gen, batt_start_level):
+def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_periods_month, batt, t, month, restrict_charge_to_pv_gen, batt_start_level, estimate_demand_levels):
     '''
     Function that determines the minimum possible demands that this battery 
     can achieve for a particular month.
@@ -587,37 +587,38 @@ def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_per
     
     # Evaluate the diagonal set of demands, determining which one is the
     # cheapest. This will restrict the larger search space in the next step.
-    _, _, i_of_first_success = determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_profile, unique_periods, d_combinations, d_combo_n, Dn_month, d_periods_index,  batt, restrict_charge_to_pv_gen, batt_start_level, t)
+    cheapest_d_states, batt_level_profile, i_of_first_success = determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_profile, unique_periods, d_combinations, d_combo_n, Dn_month, d_periods_index,  batt, restrict_charge_to_pv_gen, batt_start_level, t)
         
-    # Assemble a list of all combinations of demand levels within the ranges of 
-    # interest, calculate their demand charges, and sort by increasing cost
-    d_combo_n = (i_of_first_success+1)**len(unique_periods)
-    d_combinations = np.zeros((d_combo_n,Dn_month+1), float)
-    d_combinations[:,:Dn_month] = gFuncs.cartesian([np.asarray(d_ranges[:i_of_first_success+1,x]) for x in range(Dn_month)])
-    TOU_demand_charge = np.sum(tFuncs.tiered_calc_vec(d_combinations[:,:Dn_month], t.d_tou_levels[:,unique_periods], t.d_tou_prices[:,unique_periods]),1) #check that periods line up with rate
-    monthly_demand_charge = tFuncs.tiered_calc_vec(np.max(d_combinations[:,:Dn_month],1), t.d_flat_levels[:,month], t.d_flat_prices[:,month])
-    d_combinations[:,-1] = TOU_demand_charge + monthly_demand_charge   
+    if estimate_demand_levels == False:
+        # Assemble a list of all combinations of demand levels within the ranges of 
+        # interest, calculate their demand charges, and sort by increasing cost
+        d_combo_n = (i_of_first_success+1)**len(unique_periods)
+        d_combinations = np.zeros((d_combo_n,Dn_month+1), float)
+        d_combinations[:,:Dn_month] = gFuncs.cartesian([np.asarray(d_ranges[:i_of_first_success+1,x]) for x in range(Dn_month)])
+        TOU_demand_charge = np.sum(tFuncs.tiered_calc_vec(d_combinations[:,:Dn_month], t.d_tou_levels[:,unique_periods], t.d_tou_prices[:,unique_periods]),1) #check that periods line up with rate
+        monthly_demand_charge = tFuncs.tiered_calc_vec(np.max(d_combinations[:,:Dn_month],1), t.d_flat_levels[:,month], t.d_flat_prices[:,month])
+        d_combinations[:,-1] = TOU_demand_charge + monthly_demand_charge   
+        
+        
+        # These next several steps are sorting first by ascending cost, and then
+        # by descending value of the lowest cost period (in an effort to catch a zero-cost period)
+        # Without this, it would solve for the highest-demand zero-cost period value that
+        # could still meet the other period's requirements, which would then result in unnecessary 
+        # dispatching to peak shaving during zero-cost periods. 
+        # invert sign so that the sorting will work...
+        d_combinations[:,:-1] = -d_combinations[:,:-1]
+        
+        d_tou_costs = np.sum(t.d_tou_prices[:,unique_periods], 0)
+        i_min = np.argmin(d_tou_costs)
+        d_combinations = d_combinations[np.lexsort((d_combinations[:,i_min], d_combinations[:,-1]))]
     
-    
-    # These next several steps are sorting first by ascending cost, and then
-    # by descending value of the lowest cost period (in an effort to catch a zero-cost period)
-    # Without this, it would solve for the highest-demand zero-cost period value that
-    # could still meet the other period's requirements, which would then result in unnecessary 
-    # dispatching to peak shaving during zero-cost periods. 
-    # invert sign so that the sorting will work...
-    d_combinations[:,:-1] = -d_combinations[:,:-1]
-    
-    d_tou_costs = np.sum(t.d_tou_prices[:,unique_periods], 0)
-    i_min = np.argmin(d_tou_costs)
-    d_combinations = d_combinations[np.lexsort((d_combinations[:,i_min], d_combinations[:,-1]))]
-
-    # invert back...
-    d_combinations[:,:-1] = -d_combinations[:,:-1]
-    
-    cheapest_d_states, batt_level_profile, _ = determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_profile, unique_periods, d_combinations, d_combo_n, Dn_month, d_periods_index,  batt, restrict_charge_to_pv_gen, batt_start_level, t)
-    
+        # invert back...
+        d_combinations[:,:-1] = -d_combinations[:,:-1]
+        
+        cheapest_d_states, batt_level_profile, _ = determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_profile, unique_periods, d_combinations, d_combo_n, Dn_month, d_periods_index,  batt, restrict_charge_to_pv_gen, batt_start_level, t)
+        
     d_max_vector = cheapest_d_states[d_periods_month]
-    
+        
     if restrict_charge_to_pv_gen == True:
         d_max_vector = np.minimum(load_and_pv_profile+pv_profile, d_max_vector)
     
