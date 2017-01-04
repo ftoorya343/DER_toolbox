@@ -138,7 +138,7 @@ def cashflow_constructor(bill_savings,
     macrs_7_yr_sch = np.zeros([n_agents, 8])
     macrs_7_yr_sch[:,:] = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])    
     
-    if True:
+    if False:
         # Actual future-value replacement cashflow analysis
         batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh)
         replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = (batt_cost * macrs_7_yr_sch.T).T #this assumes no itc or basis-reducing incentives for batt replacements

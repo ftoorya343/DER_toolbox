@@ -91,7 +91,8 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
         batt_level_profile = np.zeros(len(load_and_pv_profile), float)
         bill_under_dispatch, _ = tFuncs.bill_calculator(opt_load_traj, t, export_tariff)
         demand_max_exceeded = False
-
+        batt_dispatch_profile = np.zeros([len(load_profile)])
+        
     else:
         # =================================================================== #
         # Determine cheapest possible demand states for the entire year
@@ -294,7 +295,11 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             
             opt_load_traj = np.zeros(len(load_and_pv_profile), float)
             for n in range(len(load_and_pv_profile)-1):
-                opt_load_traj[n+1] = selected_net_loads[traj_i[n], n]             
+                opt_load_traj[n+1] = selected_net_loads[traj_i[n], n]   
+                
+            # Determine what influence the battery had. Positive means the 
+            # battery is discharging. 
+            batt_dispatch_profile = load_and_pv_profile - opt_load_traj
             
             # This is now necessary in some cases, because coincident peak
             # charges are not calculated in the dispatch
@@ -318,6 +323,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             batt_arbitrage_value = estimate_annual_arbitrage_profit(batt.effective_power, batt.effective_cap, batt.eta_charge, batt.eta_discharge, estimator_params['cost_sum'], estimator_params['revenue_sum'])                
             bill_under_dispatch = sum(cheapest_possible_demands[:,-1]) + coincident_charges + 12*t.fixed_charge + estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
             opt_load_traj = np.zeros([len(load_profile)])
+            batt_dispatch_profile = np.zeros([len(load_profile)])
             demand_max_profile = np.zeros([len(load_profile)])
             batt_level_profile = np.zeros([len(load_profile)])
             #energy_charges = estimator_params['e_chrgs_with_PV'] - batt_arbitrage_value
@@ -331,7 +337,8 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                'bill_under_dispatch':bill_under_dispatch,
                'demand_max_exceeded':demand_max_exceeded,
                'demand_max_profile':demand_max_profile,
-               'batt_level_profile':batt_level_profile}
+               'batt_level_profile':batt_level_profile,
+               'batt_dispatch_profile':batt_dispatch_profile}
                
     return results
 
