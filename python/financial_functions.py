@@ -150,8 +150,8 @@ def cashflow_constructor(bill_savings,
     # Adjust for inflation
     inv_replacement_cf = inv_replacement_cf*inflation_adjustment
     batt_replacement_cf = batt_replacement_cf #*inflation_adjustment - inflation temp removed because of present value adjustment
-    deprec_deductions = replacement_deductions[:,:analysis_years+1] #*inflation_adjustment
-    
+    deprec_deductions = replacement_deductions[:,:analysis_years+1]
+
     cf += inv_replacement_cf + batt_replacement_cf
     
     #################### Operating Expenses ###################################
