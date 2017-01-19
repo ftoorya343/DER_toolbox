@@ -13,9 +13,8 @@ def cashflow_constructor(bill_savings,
                          pv_size, pv_price, inverter_price, pv_om,
                          batt_cap, batt_power, 
                          batt_cost_per_kw, batt_cost_per_kwh, 
-                         batt_replace_cost_per_kw, batt_replace_cost_per_kwh,
+                         batt_om_per_kw, batt_om_per_kwh,
                          batt_chg_frac,
-                         batt_replacement_sch, batt_om,
                          sector, itc, deprec_sched, 
                          fed_tax_rate, state_tax_rate, real_d,  
                          analysis_years, inflation, 
@@ -81,10 +80,9 @@ def cashflow_constructor(bill_savings,
     if np.size(batt_power) != n_agents or n_agents==1: batt_power = np.repeat(batt_power, n_agents) 
     if np.size(batt_cost_per_kw) != n_agents or n_agents==1: batt_cost_per_kw = np.repeat(batt_cost_per_kw, n_agents) 
     if np.size(batt_cost_per_kwh) != n_agents or n_agents==1: batt_cost_per_kwh = np.repeat(batt_cost_per_kwh, n_agents) 
-    if np.size(batt_replace_cost_per_kw) != n_agents or n_agents==1: batt_replace_cost_per_kw = np.repeat(batt_replace_cost_per_kw, n_agents) 
-    if np.size(batt_replace_cost_per_kwh) != n_agents or n_agents==1: batt_replace_cost_per_kwh = np.repeat(batt_replace_cost_per_kwh, n_agents) 
     if np.size(batt_chg_frac) != n_agents or n_agents==1: batt_chg_frac = np.repeat(batt_chg_frac, n_agents) 
-    if np.size(batt_om) != n_agents or n_agents==1: batt_om = np.repeat(batt_om, n_agents) 
+    if np.size(batt_om_per_kw) != n_agents or n_agents==1: batt_om_per_kw = np.repeat(batt_om_per_kw, n_agents) 
+    if np.size(batt_om_per_kwh) != n_agents or n_agents==1: batt_om_per_kwh = np.repeat(batt_om_per_kwh, n_agents) 
     if np.size(real_d) != n_agents or n_agents==1: real_d = np.repeat(real_d, n_agents) 
     if np.size(down_payment_fraction) != n_agents or n_agents==1: down_payment_fraction = np.repeat(down_payment_fraction, n_agents) 
     if np.size(loan_rate) != n_agents or n_agents==1: loan_rate = np.repeat(loan_rate, n_agents) 
@@ -127,39 +125,27 @@ def cashflow_constructor(bill_savings,
     # It would be better to inflate the replacement costs for inflation, rather
     # than adjusting it at the end.
     inv_replacement_cf = np.zeros(shape)
-    batt_replacement_cf = np.zeros(shape)
     
     # Inverter replacements
     inv_replacement_cf[:,10] -= pv_size * inverter_price # assume a single inverter replacement at year 10
     
-    # Battery replacements
-    # Assumes battery replacements can harness 7 year MACRS depreciation
-    replacement_deductions = np.zeros([n_agents,analysis_years+20]) #need a temporary larger array to hold depreciation schedules. Not that schedules may get truncated by analysis years. 
-    macrs_7_yr_sch = np.zeros([n_agents, 8])
-    macrs_7_yr_sch[:,:] = np.array([.1429,.2449,.1749,.1249,.0893,.0892,.0893,0.0446])    
-    
-    if False:
-        # Actual future-value replacement cashflow analysis
-        batt_replacement_cf[:,batt_replacement_sch] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh)
-        replacement_deductions[:,batt_replacement_sch+1:batt_replacement_sch+9] = (batt_cost * macrs_7_yr_sch.T).T #this assumes no itc or basis-reducing incentives for batt replacements
-    else:
-        # Using present-value of replacement and deduction values, to avoid problems with simple payback calc in NYSERDA analysis
-        batt_replacement_cf[:,0] -= (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) #.reshape(n_agents, 1)
-        replacement_deductions[:,0]  = (batt_power*batt_replace_cost_per_kw + batt_cap*batt_replace_cost_per_kwh  / (1 + real_d)**batt_replacement_sch) * 0.766112
-    
     # Adjust for inflation
     inv_replacement_cf = inv_replacement_cf*inflation_adjustment
-    batt_replacement_cf = batt_replacement_cf #*inflation_adjustment - inflation temp removed because of present value adjustment
-    deprec_deductions = replacement_deductions[:,:analysis_years+1]
 
-    cf += inv_replacement_cf + batt_replacement_cf
+    cf += inv_replacement_cf
     
     #################### Operating Expenses ###################################
     # Nominally includes O&M, fuel, insurance, and property tax - although 
     # currently only includes O&M.
     # All operating expenses increase with inflation
     operating_expenses_cf = np.zeros(shape)
-    operating_expenses_cf[:,1:] = (pv_om * pv_size + batt_om * batt_cap).reshape(n_agents, 1)
+    batt_om_cf = np.zeros(shape)
+
+    # Battery replacement through O&M
+    batt_om_cf[:,1:] = (batt_power*batt_om_per_kw + batt_cap*batt_om_per_kwh).reshape(n_agents, 1)
+    
+    operating_expenses_cf[:,1:] = (pv_om * pv_size).reshape(n_agents, 1)
+    operating_expenses_cf += batt_om_cf
     operating_expenses_cf = operating_expenses_cf*inflation_adjustment
     cf -= operating_expenses_cf
     
@@ -173,6 +159,7 @@ def cashflow_constructor(bill_savings,
     # Per SAM, depreciable basis is sum of total installed cost and total 
     # construction financing costs, less 50% of ITC and any incentives that
     # reduce the depreciable basis.
+    deprec_deductions = np.zeros(shape)
     deprec_basis = installed_cost - itc_value*0.5 
     deprec_deductions[:,1:np.size(deprec_sched,1)+1] = (deprec_basis * deprec_sched.T).T
     # to be used later in fed tax calcs
@@ -269,7 +256,7 @@ def cashflow_constructor(bill_savings,
                'installed_cost':installed_cost,
                'up_front_cost':up_front_cost,
                'inv_replacement':inv_replacement_cf,
-               'batt_replacement':batt_replacement_cf,              
+               'batt_om_cf':batt_om_cf,              
                'operating_expenses':operating_expenses_cf,
                'pv_itc_value':pv_itc_value,
                'batt_itc_value':batt_itc_value,

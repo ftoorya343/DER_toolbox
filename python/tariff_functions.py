@@ -142,7 +142,7 @@ class Tariff:
             input_params = {'version':3,
                         'format':'json',
                         'detail':'full',
-                        'getpage':urdb_id, # not real: 57d0b2315457a3120ec5b286 real: 57bcd2b65457a3a67e540154
+                        'getpage':urdb_id,
                         'api_key':'bg51RuoT2OD733xqu0ehRRZWUzBGvOJuN5xyRtB4'}
         
             r = req.get('http://api.openei.org/utility_rates?', params=input_params)
