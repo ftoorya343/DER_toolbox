@@ -85,6 +85,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
     
     '''
     load_and_pv_profile = load_profile - pv_profile
+    
     if batt.effective_cap == 0.0:
         opt_load_traj = load_and_pv_profile
         demand_max_profile = load_and_pv_profile
@@ -97,7 +98,6 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
         # =================================================================== #
         # Determine cheapest possible demand states for the entire year
         # =================================================================== #
-        #d_inc_n = 100 # Number of demand levels between original and lowest possible that will be explored
         month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760]);
         cheapest_possible_demands = np.zeros((12,np.max([t.d_tou_n+1, 2])), float)
         demand_max_profile = np.zeros(len(load_and_pv_profile), float)
@@ -598,29 +598,29 @@ def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_per
         
     if estimate_demand_levels == False:
         # Assemble a list of all combinations of demand levels within the ranges of 
-        # interest, calculate their demand charges, and sort by increasing cost
-        d_combo_n = (i_of_first_success+1)**len(unique_periods)
+        # interest. For a 2D situation, this search space will consist of 
+        # quadrants 1 and 3 around the i_of_first_success, as quadrant 2
+        # contains no possible solutions and quadrant 4 is dominated. For ND
+        # situations, each tuple of the cartesian should contain i:Dmin for one
+        # dimension and i:Dmax for the other dimensions
+        set_of_all_demand_combinations = np.zeros([0,Dn_month])
+        for dimension in range(Dn_month):
+            list_of_ranges = list()
+            for d_n in range(Dn_month):
+                if d_n==dimension: list_of_ranges.append(d_ranges[:i_of_first_success+1, d_n])
+                else: list_of_ranges.append(d_ranges[i_of_first_success:, d_n])
+            set_of_demands_for_this_dimension = gFuncs.cartesian(list_of_ranges)
+            set_of_all_demand_combinations = np.concatenate((set_of_all_demand_combinations, set_of_demands_for_this_dimension))
+        
+        d_combo_n = len(set_of_all_demand_combinations)
         d_combinations = np.zeros((d_combo_n,Dn_month+1), float)
-        d_combinations[:,:Dn_month] = gFuncs.cartesian([np.asarray(d_ranges[:i_of_first_success+1,x]) for x in range(Dn_month)])
+        d_combinations[:,:Dn_month] = set_of_all_demand_combinations
+        
+        # Calculate the demand charges of the search space and sort by 
+        # increasing cost.
         TOU_demand_charge = np.sum(tFuncs.tiered_calc_vec(d_combinations[:,:Dn_month], t.d_tou_levels[:,unique_periods], t.d_tou_prices[:,unique_periods]),1) #check that periods line up with rate
         monthly_demand_charge = tFuncs.tiered_calc_vec(np.max(d_combinations[:,:Dn_month],1), t.d_flat_levels[:,month], t.d_flat_prices[:,month])
         d_combinations[:,-1] = TOU_demand_charge + monthly_demand_charge   
-        
-        
-        # These next several steps are sorting first by ascending cost, and then
-        # by descending value of the lowest cost period (in an effort to catch a zero-cost period)
-        # Without this, it would solve for the highest-demand zero-cost period value that
-        # could still meet the other period's requirements, which would then result in unnecessary 
-        # dispatching to peak shaving during zero-cost periods. 
-        # invert sign so that the sorting will work...
-        d_combinations[:,:-1] = -d_combinations[:,:-1]
-        
-        d_tou_costs = np.sum(t.d_tou_prices[:,unique_periods], 0)
-        i_min = np.argmin(d_tou_costs)
-        d_combinations = d_combinations[np.lexsort((d_combinations[:,i_min], d_combinations[:,-1]))]
-    
-        # invert back...
-        d_combinations[:,:-1] = -d_combinations[:,:-1]
         
         cheapest_d_states, batt_level_profile, _ = determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_profile, unique_periods, d_combinations, d_combo_n, Dn_month, d_periods_index,  batt, restrict_charge_to_pv_gen, batt_start_level, t)
         
@@ -653,9 +653,15 @@ def determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_p
     able_to_meet_targets = np.all(batt_e_levels>=0, 1)
     
     i_of_first_success = np.argmax(able_to_meet_targets)
-    batt_level_profile = batt_e_levels[i_of_first_success, :]
-    cheapest_d_states = np.zeros(np.max([tariff.d_tou_n+1, 2])) # minimum of two, because some tariffs have d_tou_n=0, but still have d_flat
-    cheapest_d_states[unique_periods] = d_combinations[i_of_first_success,:-1]
-    cheapest_d_states[-1] = d_combinations[i_of_first_success,-1]
+
+    d_charge_total_for_i_of_first_success = d_combinations[i_of_first_success, -1]
+    match_lowest_cost = np.where(d_combinations[:,-1]==d_charge_total_for_i_of_first_success, True, False)
+    demand_period_sums = np.where(match_lowest_cost==True, np.sum(d_combinations[:,:-1],1), 0)
+    i_of_least_constrained_cheapest_option = np.argmax(demand_period_sums)
     
-    return cheapest_d_states, batt_level_profile, i_of_first_success
+    batt_level_profile = batt_e_levels[i_of_least_constrained_cheapest_option, :]
+    cheapest_d_states = np.zeros(np.max([tariff.d_tou_n+1, 2])) # minimum of two, because some tariffs have d_tou_n=0, but still have d_flat
+    cheapest_d_states[unique_periods] = d_combinations[i_of_least_constrained_cheapest_option,:-1]
+    cheapest_d_states[-1] = d_combinations[i_of_least_constrained_cheapest_option,-1]
+    
+    return cheapest_d_states, batt_level_profile, i_of_least_constrained_cheapest_option

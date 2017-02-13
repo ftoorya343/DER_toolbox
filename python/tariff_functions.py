@@ -515,6 +515,37 @@ class Tariff:
         with open(json_file_name, 'w') as fp:
             json.dump(d_prep_for_json, fp)
             
+    #######################################################################
+    # Redefine TOU demand charge periods
+    #######################################################################             
+    def redefine_tou_d_periods(self, d_wkday_12by24, d_wkend_12by24, d_tou_levels, d_tou_prices):
+        
+        self.d_tou_levels = d_tou_levels
+        self.d_tou_prices = d_tou_prices
+        self.d_wkday_12by24 = d_wkday_12by24
+        self.d_wkend_12by24 = d_wkend_12by24
+        self.d_tou_n = int(np.shape(d_tou_levels)[1])
+        if np.count_nonzero(d_tou_prices) == 0: self.d_tou_exists = False
+        else: self.d_tou_exists = True
+            
+        month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760], int)
+        
+        month_index = np.zeros(8760, int)
+        for month, hours in enumerate(month_hours):
+            month_index[month_hours[month-1]:hours] = month-1
+
+        self.d_tou_8760 = np.zeros(8760, int)
+        hour = 0
+        day = self.start_day # Start on 6 because the load profiles we are using start on a Sunday
+        for h in range(8760):
+            if day < 5:
+                self.d_tou_8760[h] = self.d_wkday_12by24[month_index[h], hour]
+            else:
+                self.d_tou_8760[h] = self.d_wkend_12by24[month_index[h], hour]
+            hour += 1
+            if hour == 24: hour = 0; day += 1
+            if day == 7: day = 0
+                            
                  
 #%%     
 class Export_Tariff:
