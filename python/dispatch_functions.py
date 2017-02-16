@@ -613,6 +613,9 @@ def calc_min_possible_demands_vector(res, load_and_pv_profile, pv_profile, d_per
             set_of_all_demand_combinations = np.concatenate((set_of_all_demand_combinations, set_of_demands_for_this_dimension))
         
         d_combo_n = len(set_of_all_demand_combinations)
+        
+                
+        
         d_combinations = np.zeros((d_combo_n,Dn_month+1), float)
         d_combinations[:,:Dn_month] = set_of_all_demand_combinations
         
@@ -651,7 +654,6 @@ def determine_cheapest_possible_of_given_demand_levels(load_and_pv_profile, pv_p
         batt_e_levels[:,n] = np.clip(batt_e_levels[:,n], -99, batt.effective_cap)
 
     able_to_meet_targets = np.all(batt_e_levels>=0, 1)
-    
     i_of_first_success = np.argmax(able_to_meet_targets)
 
     d_charge_total_for_i_of_first_success = d_combinations[i_of_first_success, -1]

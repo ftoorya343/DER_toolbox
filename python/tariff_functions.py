@@ -12,6 +12,19 @@ import numpy as np
 import pandas as pd
 import codecs
 import json
+import csv
+
+
+#%%
+# Load configuration file, if one exists.
+def load_config_params(config_file_name):
+    '''
+    Each user should fill in a config_template.json file.
+    '''
+    
+    config = json.load(file('config.json','r'))
+    
+    return config
 
 
 #%%
@@ -63,7 +76,7 @@ class Tariff:
      this may have been solved now, but general unit check would be good.
     """
         
-    def __init__(self, start_day=6, urdb_id=None, json_file_name=None, dict_obj=None):
+    def __init__(self, start_day=6, urdb_id=None, json_file_name=None, dict_obj=None, api_key=None):
                    
         #######################################################################
         ##### If given no urdb id or csv file name, create blank tariff #######
@@ -139,11 +152,15 @@ class Tariff:
         # If given a urdb_id input argument, obtain and reshape that tariff through the URDB API 
         #######################################################################
         elif urdb_id != None:
+
+            if api_key == None: 
+                print "No URDB API key defined."
+            
             input_params = {'version':3,
                         'format':'json',
                         'detail':'full',
                         'getpage':urdb_id,
-                        'api_key':'bg51RuoT2OD733xqu0ehRRZWUzBGvOJuN5xyRtB4'}
+                        'api_key':api_key}
         
             r = req.get('http://api.openei.org/utility_rates?', params=input_params)
             
@@ -796,5 +813,134 @@ def bill_calculator(load_profile, tariff, export_tariff):
     
     return annual_bill, results_dict
 
+    
+#%%
+# Bulk Downloader from URDB API
+def download_tariffs_from_urdb(api_key, sector=None, utility=None, print_progress=True):
+    '''
+    Each user should get their own URDB API key: http://en.openei.org/services/api/signup/
+    
+    Sectors: Residential, Commercial, Industrial, Lighting
+    
+    '''
+        
+    fields = ['utility',
+              'eiaid',
+              'name',
+              'label',
+              'enddate',
+              'demandrateunit',
+              'flatdemandunit',
+              'uri',
+              'sector',
+              'description',
+              'source',
+              'peakkwcapacitymax',
+              'peakkwcapacitymin',
+              'peakkwhuseagemax',
+              'peakkwhuseagemin',
+              'voltagecategory',
+              'phasewiring']
+              
+    tariffs = pd.DataFrame(columns=fields)
+
+    flag = True
+    offset = 0
+    chunk_count = 0
+    
+    input_params = {'version':3,
+                'format':'json',
+                'detail':'full',
+                'limit':500,
+                'api_key':api_key}
+    
+    if sector != None: input_params['sector'] = sector
+    if utility != None: input_params['ratesforutility'] = utility
+        
+    while flag == True:
+        input_params['offset'] = offset
+    
+        r = req.get('http://api.openei.org/utility_rates?', params=input_params)
+        
+        if len(r.json()['items']) == 0:
+            flag = False
+        else:
+            tariff_chunk = pd.DataFrame(index=range(500), columns=fields)
+            for count, tariff in enumerate(r.json()['items']):
+                if 'utility' in tariff: tariff_chunk.loc[count, 'utility'] = tariff['utility'].encode('utf-8')
+                if 'eiaid' in tariff: tariff_chunk.loc[count, 'eiaid'] = tariff['eiaid']
+                if 'name' in tariff: tariff_chunk.loc[count, 'name'] = tariff['name'].encode('utf-8')
+                if 'label' in tariff: tariff_chunk.loc[count, 'label'] = tariff['label']
+                if 'enddate' in tariff: tariff_chunk.loc[count, 'enddate'] = tariff['enddate']
+                if 'demandrateunit' in tariff: tariff_chunk.loc[count, 'demandrateunit'] = tariff['demandrateunit']
+                if 'flatdemandunit' in tariff: tariff_chunk.loc[count, 'flatdemandunit'] = tariff['flatdemandunit']
+                if 'uri' in tariff: tariff_chunk.loc[count, 'uri'] = tariff['uri'].encode('utf-8')
+                if 'sector' in tariff: tariff_chunk.loc[count, 'sector'] = tariff['sector'].encode('utf-8')
+                if 'description' in tariff: tariff_chunk.loc[count, 'description'] = tariff['description'].encode('utf-8')
+                if 'source' in tariff: tariff_chunk.loc[count, 'source'] = tariff['source'].encode('utf-8')
+                if 'peakkwcapacitymax' in tariff: tariff_chunk.loc[count, 'peakkwcapacitymax'] = tariff['peakkwcapacitymax']
+                if 'peakkwcapacitymin' in tariff: tariff_chunk.loc[count, 'peakkwcapacitymin'] = tariff['peakkwcapacitymin']
+                if 'peakkwhuseagemax' in tariff: tariff_chunk.loc[count, 'peakkwhuseagemax'] = tariff['peakkwhuseagemax']
+                if 'peakkwhuseagemin' in tariff: tariff_chunk.loc[count, 'peakkwhuseagemin'] = tariff['peakkwhuseagemin']
+                if 'voltagecategory' in tariff: tariff_chunk.loc[count, 'voltagecategory'] = tariff['voltagecategory'].encode('utf-8')
+                if 'phasewiring' in tariff: tariff_chunk.loc[count, 'phasewiring'] = tariff['phasewiring'].encode('utf-8')
+                            
+            tariffs = tariffs.append(tariff_chunk.loc[:count, :], ignore_index=True)
+            offset += len(r.json()['items'])
+            
+            chunk_count += len(r.json()['items'])
+            if print_progress==True: print chunk_count
+        
+        
+    return tariffs
+    
+    
+#%%
+# Filter tariff_df by a list of keywords in the tariff names, and unit types
+    
+def filter_tariff_df(tariff_df, 
+                     keyword_list=None,
+                     keyword_list_file=None,
+                     demand_units_to_exclude=['hp', 'kVA', 'kW daily', 'hp daily', 'kVA daily'], 
+                     remove_expired=True):
+                         
+    '''
+    TODO: Bring in energy rate unit filtering
+    energy_units_to_exclude=['kWh/kW', 'kWh/hp', 'kWh/kVA', 'kWh daily', 'kWh/kW daily', 'kWh/hp daily', 'kWh/kVA daily'], 
+    
+    '''
+    
+    if keyword_list_file != None:
+        keyword_list = []
+        with open('keyword_list_for_tariff_exclusion.csv', 'rb') as f:
+            reader = csv.reader(f)
+            for item in reader:
+                keyword_list = keyword_list + item
+    elif keyword_list != None:
+        keyword_list = keyword_list
+    else:
+        print 'enter a keyword_list or keyword_list_file'
+    
+    tariffs_to_exclude = np.zeros(len(tariff_df), bool)
+    keyword_count_df = pd.DataFrame(index=keyword_list)
+    
+    for keyword in keyword_list:
+        tariffs_that_contain_keyword = tariff_df['name'].str.contains(keyword, case=False)
+        tariffs_to_exclude = tariffs_that_contain_keyword + tariffs_to_exclude
+        keyword_count_df.loc[keyword, 'num_of_tariffs_excluded'] = np.sum(tariffs_that_contain_keyword)
+    
+    for demand_unit in demand_units_to_exclude:
+        tariffs_that_contain_unit = tariff_df['demandrateunit'] == demand_unit
+        tariffs_that_contain_unit += tariff_df['flatdemandunit'] == demand_unit
+        tariffs_to_exclude = tariffs_to_exclude + tariffs_that_contain_unit            
+        
+    tariffs_with_an_end_date = pd.isnull(tariff_df['enddate']) == False
+        
+    tariffs_to_exclude = tariffs_to_exclude + tariffs_with_an_end_date
+        
+    excluded_tariffs = tariff_df[tariffs_to_exclude==True]
+    included_tariffs = tariff_df[tariffs_to_exclude==False]
+                             
+    return included_tariffs, excluded_tariffs, keyword_count_df
     
 
