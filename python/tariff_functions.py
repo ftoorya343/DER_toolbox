@@ -912,7 +912,7 @@ def filter_tariff_df(tariff_df,
     
     if keyword_list_file != None:
         keyword_list = []
-        with open('keyword_list_for_tariff_exclusion.csv', 'rb') as f:
+        with open(keyword_list_file, 'rb') as f:
             reader = csv.reader(f)
             for item in reader:
                 keyword_list = keyword_list + item
