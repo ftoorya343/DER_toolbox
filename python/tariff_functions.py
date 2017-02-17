@@ -816,7 +816,7 @@ def bill_calculator(load_profile, tariff, export_tariff):
     
 #%%
 # Bulk Downloader from URDB API
-def download_tariffs_from_urdb(api_key, sector=None, utility=None, print_progress=True):
+def download_tariffs_from_urdb(api_key, sector=None, utility=None, print_progress=False):
     '''
     Each user should get their own URDB API key: http://en.openei.org/services/api/signup/
     
