@@ -326,27 +326,10 @@ class Tariff:
                     self.d_wkend_12by24[month, :] = tariff_original['demandweekendschedule'][month]
             
             ################### Repackage 12x24s as 8760s Schedule ########################
-            self.start_day = start_day            
-            month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760], int)
-            
-            month_index = np.zeros(8760, int)
-            for month, hours in enumerate(month_hours):
-                month_index[month_hours[month-1]:hours] = month-1
+            self.start_day = start_day                               
+            self.d_tou_8760 = build_8760_from_12by24s(self.d_wkday_12by24, self.d_wkend_12by24, self.start_day)
+            self.e_tou_8760 = build_8760_from_12by24s(self.e_wkday_12by24, self.e_wkend_12by24, self.start_day)
 
-            self.d_tou_8760 = np.zeros(8760, int)
-            self.e_tou_8760 = np.zeros(8760, int)
-            hour = 0
-            day = start_day # Start on 6 because the load profiles we are using start on a Sunday
-            for h in range(8760):
-                if day < 5:
-                    self.d_tou_8760[h] = self.d_wkday_12by24[month_index[h], hour]
-                    self.e_tou_8760[h] = self.e_wkday_12by24[month_index[h], hour]
-                else:
-                    self.d_tou_8760[h] = self.d_wkend_12by24[month_index[h], hour]
-                    self.e_tou_8760[h] = self.e_wkend_12by24[month_index[h], hour]
-                hour += 1
-                if hour == 24: hour = 0; day += 1
-                if day == 7: day = 0
             
             ######################## Precalculations ######################################
             # Collapse the tiered price matrix down to just the maximum cost
@@ -533,9 +516,9 @@ class Tariff:
             json.dump(d_prep_for_json, fp)
             
     #######################################################################
-    # Redefine TOU demand charge periods
+    # Define TOU demand charge periods, levels, and prices
     #######################################################################             
-    def redefine_tou_d_periods(self, d_wkday_12by24, d_wkend_12by24, d_tou_levels, d_tou_prices):
+    def define_d_tou(self, d_wkday_12by24, d_wkend_12by24, d_tou_levels, d_tou_prices):
         
         self.d_tou_levels = d_tou_levels
         self.d_tou_prices = d_tou_prices
@@ -544,24 +527,66 @@ class Tariff:
         self.d_tou_n = int(np.shape(d_tou_levels)[1])
         if np.count_nonzero(d_tou_prices) == 0: self.d_tou_exists = False
         else: self.d_tou_exists = True
-            
-        month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760], int)
-        
-        month_index = np.zeros(8760, int)
-        for month, hours in enumerate(month_hours):
-            month_index[month_hours[month-1]:hours] = month-1
+                
+        self.d_tou_8760 = build_8760_from_12by24s(d_wkday_12by24, d_wkend_12by24, self.start_day)
 
-        self.d_tou_8760 = np.zeros(8760, int)
-        hour = 0
-        day = self.start_day # Start on 6 because the load profiles we are using start on a Sunday
-        for h in range(8760):
-            if day < 5:
-                self.d_tou_8760[h] = self.d_wkday_12by24[month_index[h], hour]
-            else:
-                self.d_tou_8760[h] = self.d_wkend_12by24[month_index[h], hour]
-            hour += 1
-            if hour == 24: hour = 0; day += 1
-            if day == 7: day = 0
+
+    #######################################################################
+    # Define Flat demand charge periods, levels, and prices
+    #######################################################################             
+    def define_d_flat(self, d_flat_levels, d_flat_prices):
+        
+        # If it is only handed one value for levels and prices, it assumes that
+        # value applies to all months
+        if np.size(d_flat_prices) == 1:
+            self.d_flat_levels = np.array([[d_flat_levels]]).repeat(12).reshape(1,12)
+            self.d_flat_prices = np.array([[d_flat_prices]]).repeat(12).reshape(1,12)
+            self.d_flat_n = 1
+        else:
+            self.d_flat_levels = d_flat_levels
+            self.d_flat_prices = d_flat_prices
+            self.d_flat_n = np.size(np.unique(d_flat_prices))
+        
+
+        if np.all(d_flat_prices==0): self.d_flat_exists = False
+        else: self.d_flat_exists = True
+            
+
+    #######################################################################
+    # Define energy periods, levels, and prices
+    #######################################################################             
+    def define_e(self, e_wkday_12by24, e_wkend_12by24, e_levels, e_prices):
+        
+        self.e_levels = e_levels
+        self.e_prices = e_prices
+        self.e_wkday_12by24 = e_wkday_12by24
+        self.e_wkend_12by24 = e_wkend_12by24
+        self.e_n = int(np.shape(e_levels)[1])
+        
+        # Are there any energy charges?
+        if np.count_nonzero(e_prices) == 0: self.e_exists = False
+        else: self.e_exists = True
+        
+        # Are there any TOU energy charges?
+        if np.any(e_wkday_12by24 != np.repeat(e_wkday_12by24[:,0],24).reshape(12,24)): # TODO: add weekends
+            self.e_tou_exists = True
+        else: 
+            self.d_tou_exists = False
+            
+        self.e_tou_8760 = build_8760_from_12by24s(e_wkday_12by24, e_wkend_12by24, self.start_day)
+
+                
+        ######################## Precalculations ######################################
+        # Collapse the tiered price matrix down to just the maximum cost
+        # in each tier, to be used during dispatch.
+        self.e_prices_no_tier = np.max(self.e_prices, 0)
+        
+        # Determine the maximum differential in energy price within a day.
+        e_12by24_max_prices_wkday = self.e_prices_no_tier[self.e_wkday_12by24]
+        e_12by24_max_prices_wkend = self.e_prices_no_tier[self.e_wkend_12by24]
+        e_max_price_differential_wkday = np.max(e_12by24_max_prices_wkday, 1) - np.min(e_12by24_max_prices_wkday, 1)
+        e_max_price_differential_wkend = np.max(e_12by24_max_prices_wkend, 1) - np.min(e_12by24_max_prices_wkend, 1)
+        self.e_max_difference = np.max([e_max_price_differential_wkday, e_max_price_differential_wkend])
                             
                  
 #%%     
@@ -943,4 +968,142 @@ def filter_tariff_df(tariff_df,
                              
     return included_tariffs, excluded_tariffs, keyword_count_df
     
+    
+#%%
+# Create 8760 from two 12x24's
+def build_8760_from_12by24s(wkday_12by24, wkend_12by24, start_day=6):
+    '''
+    Start day of 6 equates to a Sunday
+    '''
+    
+    month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760], int)
+    
+    month_index = np.zeros(8760, int)
+    for month, hours in enumerate(month_hours):
+        month_index[month_hours[month-1]:hours] = month-1
 
+    period_8760 = np.zeros(8760, int)
+    hour = 0
+    day = start_day # Start on 6 because the load profiles we are using start on a Sunday
+    for h in range(8760):
+        if day < 5:
+            period_8760[h] = wkday_12by24[month_index[h], hour]
+        else:
+            period_8760[h] = wkend_12by24[month_index[h], hour]
+        hour += 1
+        if hour == 24: hour = 0; day += 1
+        if day == 7: day = 0
+            
+    return period_8760
+
+
+#%%
+def design_tariff_for_portfolio(agent_df, avg_rev, peak_hour_indicies, summer_month_indicies, rev_f_d, rev_f_e, rev_f_fixed):
+    '''
+    Builds a tariff that would extract a given $/kWh from a portfolio of 
+    customers.
+    
+    Inputs:
+        - agent_df: Dataframe of agents. Must contain load_profile and its 
+                    weight in the portfolio.
+        - avg_rev: $/kWh that the tariff would extract from the given portfolio
+                    of customers.
+        - rev_f_d: revenue strucutre for demand charges. Format is [fraction of
+                    total revenue, fraction that comes from tou charges, 
+                    fraction that comes from flat charges]
+                    ex: [0.4875, 0.5, 0.5]
+        - rev_f_d: revenue strucutre for energy charges. Format is [fraction of
+                    total revenue, fraction that comes from off-peak hours, 
+                    fraction that comes from on-peak hours]
+                    ex: [0.4875, 0.20, 0.8]
+        - rev_f_fixed: [fraction of revenue from fixed monthly charges].
+                    ex: [0.025]
+        
+    Assumptions:
+        - peak hours are the same between demand and energy.
+        - peak hours only occur during the summer
+
+    '''
+    
+    # Construct the 12x24 matricies for the given peak hours
+    d_wkend_12by24 = np.zeros([12,24], int)
+    d_wkday_12by24 = np.zeros([12,24], int)
+    e_wkend_12by24 = np.zeros([12,24], int)
+    e_wkday_12by24 = np.zeros([12,24], int)
+    for peak_hour in peak_hour_indicies:
+        d_wkday_12by24[summer_month_indicies, peak_hour] = 1
+        e_wkday_12by24[summer_month_indicies, peak_hour] = 1
+    
+    # Build an 8760 of peak hours   
+    d_tou_8760 = build_8760_from_12by24s(d_wkday_12by24, d_wkend_12by24, start_day=6)
+    d_tou_n = 2
+    
+    # 8760 vector of month numbers
+    month_hours = np.array([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760], int)
+    month_index = np.zeros(8760, int)
+    for month, hours in enumerate(month_hours):
+        month_index[month_hours[month-1]:hours] = month-1
+    
+    period_matrix = np.zeros([8760, d_tou_n*12], bool)
+    period_matrix[range(8760),d_tou_8760+month_index*d_tou_n] = True
+    
+    # Define the dataframes that energy and demand values will be recorded in
+    bld_peak_demands = pd.DataFrame()
+    bld_flat_demands = pd.DataFrame()
+    bld_peak_energy = pd.DataFrame()
+    bld_offpeak_energy = pd.DataFrame()
+    
+    # Determine the peak demands and energy consumption for each building in
+    # the portfolio
+    for bld in list(agent_df.index):
+        load_profile = agent_df.loc[bld, 'load_profile']
+        load_distributed = load_profile[np.newaxis, :].T*period_matrix
+    
+        # Determine the max demands
+        period_maxs = np.max(load_distributed, axis=0).reshape([2,12], order='F')
+        bld_peak_demands[bld] = period_maxs[1,:]
+        bld_flat_demands[bld] = np.max(period_maxs, axis=0)
+        
+        # Determine energy consumption
+        period_sums = np.sum(load_distributed, axis=0).reshape([2,12], order='F')
+        bld_peak_energy[bld] = period_sums[1,:]
+        bld_offpeak_energy[bld] = period_sums[0,:]
+    
+    # Calculate the normalized revenue from each category
+    normalized_consumption = np.sum(agent_df['f_in_this_portfolio'] * agent_df['aec'])
+    norm_rev = normalized_consumption * avg_rev
+    norm_rev_d_peak = norm_rev * rev_f_d[0] * rev_f_d[1]
+    norm_rev_d_flat = norm_rev * rev_f_d[0] * rev_f_d[2]
+    norm_rev_e_peak = norm_rev * rev_f_e[0] * rev_f_e[1]
+    norm_rev_e_offpeak = norm_rev * rev_f_e[0] * rev_f_e[2]
+    norm_rev_fixed = norm_rev * rev_f_fixed[0]
+    
+    # Calculate the prices that would result in the required revenue being
+    # collected, for each category
+    charge_d_peak = norm_rev_d_peak / np.sum(np.sum(bld_peak_demands)*agent_df['f_in_this_portfolio'])
+    charge_d_flat = norm_rev_d_flat / np.sum(np.sum(bld_flat_demands)*agent_df['f_in_this_portfolio'])
+    charge_e_peak = norm_rev_e_peak / np.sum(np.sum(bld_peak_energy)*agent_df['f_in_this_portfolio'])
+    charge_e_offpeak = norm_rev_e_offpeak / np.sum(np.sum(bld_offpeak_energy)*agent_df['f_in_this_portfolio'])
+    charge_fixed_monthly = norm_rev_fixed / np.sum(agent_df['f_in_this_portfolio']) / 12.0
+    
+    # Prepare variables for tariff definition
+    d_tou_levels = np.array([[1e9, 1e9]])
+    d_tou_prices = np.array([[0, charge_d_peak]])
+    d_flat_levels = 1e9
+    d_flat_prices = charge_d_flat
+    e_levels = np.array([[1e9, 1e9]])
+    e_prices = np.array([[charge_e_offpeak, charge_e_peak]]) # Check this!!! TODO
+    
+    # Define tariff
+    tariff = Tariff()
+    tariff.define_d_flat(d_flat_levels, d_flat_prices)
+    tariff.define_d_tou(d_wkday_12by24, d_wkend_12by24, d_tou_levels, d_tou_prices)
+    tariff.define_e(e_wkday_12by24, e_wkend_12by24, e_levels, e_prices)
+    tariff.fixed_charge = charge_fixed_monthly
+    
+    export_tariff = Export_Tariff(full_retail_nem=True)
+    for bld in list(agent_df.index):
+        load_profile = agent_df.loc[bld, 'load_profile']
+        original_bill, original_bill_results = bill_calculator(load_profile, tariff, export_tariff)
+            
+    return tariff
