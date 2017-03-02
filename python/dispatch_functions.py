@@ -63,8 +63,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                      and dispatch trajectory. True means estimate the energy
                      savings, and don't get the dispatch trajectory.
                      
-    load_profile: Original load profile prior to modification by the battery
-                  (It includes PV's contribution, if there is any)
+    load_profile: Original load profile prior to modification by PV or storage
     
     t: tariff class object
     b: battery class object
@@ -125,27 +124,6 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
         if estimated == False:    
             DP_res = batt.effective_cap / (DP_inc-1)
             illegal = 99999999
-            
-            # Old code from when I used to re-build the battery level profile, 
-            # before I realized I could use the demand max function to generate it.
-#            batt_influence_to_achieve_demand_max = demand_max_profile - load_and_pv_profile
-#            batt_influence_to_achieve_demand_max = np.clip(batt_influence_to_achieve_demand_max, -batt.effective_power, batt.effective_power) #The clip might not be necessary, since I mod anyway. 
-#            
-#            batt_actions_to_achieve_demand_max = np.array([s*batt.eta_charge if s >= 0 else s/batt.eta_discharge for s in batt_influence_to_achieve_demand_max], float)
-#            
-#            # Build offset
-#            batt_e_levels = np.zeros(len(batt_actions_to_achieve_demand_max), float)
-#            batt_e_levels[-1] = 0 #or maybe zero?
-#            for hour in np.arange(len(batt_actions_to_achieve_demand_max)-2,-1,-1):
-#                batt_e_levels[hour] = batt_e_levels[hour+1] - batt_actions_to_achieve_demand_max[hour+1]
-#                if batt_e_levels[hour] < 0: 
-#                    batt_e_levels[hour] = 0 # This might not be necessary
-#                elif batt_e_levels[hour] > batt.effective_cap: 
-#                    batt_e_levels[hour] = batt.effective_cap
-#            
-#            batt_actions_to_achieve_demand_max = np.zeros(len(batt_actions_to_achieve_demand_max), float)
-#            for hour in np.arange(len(batt_actions_to_achieve_demand_max)-2,-1,-1):
-#                batt_actions_to_achieve_demand_max[hour+1] = batt_e_levels[hour+1] - batt_e_levels[hour]
                 
             batt_actions_to_achieve_demand_max = np.zeros(len(load_profile), float)
             batt_actions_to_achieve_demand_max[1:-1] = batt_level_profile[1:-1] - batt_level_profile[0:-2]
@@ -224,9 +202,9 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                     change_in_batt_level_matrix[row,:] = (-batt_levels[row,hour] + batt_levels_buffered[row:row+batt_charge_limits_len,hour+1])
                     
                 #Because of the 'illegal' values, neg_batt_bool shouldn't be necessary
-                resulting_batt_level = change_in_batt_level_matrix + batt_levels[:,hour].reshape(DP_inc+1,1)
-                neg_batt_bool = resulting_batt_level<0
-                overfilled_batt_bool = resulting_batt_level>batt.effective_cap #this seems to be misbehaving due to float imprecision
+#                resulting_batt_level = change_in_batt_level_matrix + batt_levels[:,hour].reshape(DP_inc+1,1) # This are likely not necessary because options are restricted
+#                neg_batt_bool = resulting_batt_level<0 # This are likely not necessary because options are restricted
+#                overfilled_batt_bool = resulting_batt_level>batt.effective_cap # This are likely not necessary because options are restricted
                                 
                 charging_bool = change_in_batt_level_matrix>0
                 discharging_bool = change_in_batt_level_matrix<0
@@ -237,9 +215,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                 influence_on_load -= 0.000000001 # because of rounding error? Problems definitely occur (sometimes) without this adjustment. The adjustment magnitude has not been tuned since moving away from ints.
                 
                 net_loads = load_and_pv_profile[hour+1] + influence_on_load
-            
-                # I may also need to filter for moves the battery can't actually make
-                
+                            
                 # Determine the incremental cost-to-go for each option
                 costs_to_go[:,:] = 0 # reset costs to go
                 importing_bool = net_loads>=0 # If consuming, standard price
@@ -248,8 +224,8 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                 costs_to_go += net_loads*export_tariff.prices[export_tariff.periods_8760[hour+1]]*exporting_bool     
                 
                 # Make the incremental cost of impossible/illegal movements very high
-                costs_to_go += neg_batt_bool * illegal
-                costs_to_go += overfilled_batt_bool * illegal
+#                costs_to_go += neg_batt_bool * illegal # This are likely not necessary because options are restricted
+#                costs_to_go += overfilled_batt_bool * illegal # This are likely not necessary because options are restricted
                 demand_limit_exceeded_bool = net_loads>demand_max_profile[hour+1]
                 costs_to_go += demand_limit_exceeded_bool * illegal
                 
