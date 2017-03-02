@@ -122,8 +122,6 @@ def cashflow_constructor(bill_savings,
     cf[:,0] -= up_front_cost
     
     #################### Replacements #########################################
-    # It would be better to inflate the replacement costs for inflation, rather
-    # than adjusting it at the end.
     inv_replacement_cf = np.zeros(shape)
     
     # Inverter replacements

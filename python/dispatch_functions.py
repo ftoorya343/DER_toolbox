@@ -152,43 +152,31 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             
             batt_act_cumsum_mod_rev = np.mod(np.cumsum(batt_actions_to_achieve_demand_max[np.arange(8759,-1,-1)])[np.arange(8759,-1,-1)], DP_res)
                 
-            # Casting a wide net, and doing a pass/fail test later on with cost-to-go. May later evaluate the limits up front.
+            # batt_x_limits are the number of rows that the battery energy 
+            # level can move in a single step. Casting a wide net, and doing a 
+            # pass/fail test later on with cost-to-go.
             batt_charge_limit = int(batt.effective_power*batt.eta_charge/DP_res) + 1
             batt_discharge_limit = int(batt.effective_power/batt.eta_discharge/DP_res) + 1
             batt_charge_limits_len = batt_charge_limit + batt_discharge_limit + 1
-            # the fact the battery row levels aren't anchored anymore hasn't been thought through. How will I make sure my net is aligned?
-            
-            batt_levels_n = DP_inc
-            batt_levels_temp = np.zeros([batt_levels_n,8760])
-            batt_levels_temp[:,:] = np.linspace(0,batt.effective_cap,batt_levels_n, float).reshape(batt_levels_n,1)
-            
-            batt_levels_shift = batt_levels_temp.copy()
-            batt_levels_shift[:,:-1] = batt_levels_temp[:,:-1] + (DP_res - batt_act_cumsum_mod_rev[1:].reshape(1,8759)) #haven't checked batt_act_cumsum_mod
-            
-            batt_levels = np.zeros([batt_levels_n+1,8760], float)
-            batt_levels[1:,:] = batt_levels_shift
-            batt_levels[0,:] = 0.0
-            batt_levels[-1,:] = batt.effective_cap
-            #batt_levels = np.clip(batt_levels, 0, batt.effective_cap)
             
             
+            batt_levels = np.zeros([DP_inc+1,8760], float)
+            batt_levels[1:,:] = np.linspace(0,batt.effective_cap,DP_inc, float).reshape(DP_inc,1)
+            batt_levels[1:,:-1] = batt_levels[1:,:-1] + (DP_res - batt_act_cumsum_mod_rev[1:].reshape(1,8759)) # Shift each column's values, such that the DP can always find a way through
+            batt_levels[0,:] = 0.0 # The battery always has the option of being empty
+            batt_levels[-1,:] = batt.effective_cap # The battery always has the option of being full
+            
+            # batt_levels_buffered is the same as batt_levels, except it has
+            # buffer rows of 'illegal' values 
             batt_levels_buffered = np.zeros([np.shape(batt_levels)[0]+batt_charge_limit+batt_discharge_limit, np.shape(batt_levels)[1]], float)
             batt_levels_buffered[:batt_discharge_limit,:] = illegal
             batt_levels_buffered[-batt_charge_limit:,:] = illegal
             batt_levels_buffered[batt_discharge_limit:-batt_charge_limit,:] = batt_levels
             
-            base_change_in_batt_level_vector = np.zeros(batt_discharge_limit+batt_charge_limit+1, float)
-            base_change_in_batt_level_vector[:batt_discharge_limit+1] = np.linspace(-batt_discharge_limit*DP_res,0,batt_discharge_limit+1, float)
-            base_change_in_batt_level_vector[batt_discharge_limit:] = np.linspace(0,batt_charge_limit*DP_res,batt_charge_limit+1, float)
             
-            # Each row corresponds to a battery level, each column is the change in batt level associated with that movement.
-            # The first row corresponds to an empty batt. So it shouldn't be able to discharge. 
-            # So maybe filter by resulting_batt_level, and exclude ones that are negative or exceed cap?
-            base_change_in_batt_level_matrix = np.zeros((batt_levels_n+1, len(base_change_in_batt_level_vector)), float)
-            change_in_batt_level_matrix = np.zeros((batt_levels_n+1, len(base_change_in_batt_level_vector)), float)
-            base_change_in_batt_level_matrix[:,:] = base_change_in_batt_level_vector
-            
-            # Build an adjust to prefer slow charge, all else being equal
+            # Build an adjustment that adds a very small amount to the
+            # cost-to-go, as a function of rate of charge. Makes the DP prefer
+            # to charge slowly, all else being equal
             adjuster = np.zeros(batt_charge_limits_len, float)
             base_adjustment = 0.0000001            
             adjuster[np.arange(batt_discharge_limit,-1,-1)] = base_adjustment * np.array(range(batt_discharge_limit+1))*np.array(range(batt_discharge_limit+1)) / (batt_discharge_limit*batt_discharge_limit)
@@ -196,12 +184,14 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
 
             
             # Initialize some objects for later use in the DP
-            expected_value_n = DP_inc+1
-            expected_values = np.zeros((expected_value_n, np.size(load_and_pv_profile)), float)
+            expected_values = np.zeros((DP_inc+1, np.size(load_and_pv_profile)), float)
             DP_choices = np.zeros((DP_inc+1, np.size(load_and_pv_profile)), int)
-            influence_on_load = np.zeros(np.shape(base_change_in_batt_level_matrix), float)
+            influence_on_load = np.zeros((DP_inc+1, batt_charge_limits_len), float)
             selected_net_loads = np.zeros((DP_inc+1, np.size(load_and_pv_profile)), float)
-            
+            net_loads = np.zeros((DP_inc+1, batt_charge_limits_len), float)
+            costs_to_go = np.zeros((DP_inc+1, batt_charge_limits_len), float)
+            change_in_batt_level_matrix = np.zeros((DP_inc+1, batt_charge_limits_len), float)
+
             # Expected value of final states is the energy required to fill the battery up
             # at the most expensive electricity rate. This encourages ending with a full
             # battery, but solves a problem of demand levels being determined by a late-hour
@@ -210,18 +200,16 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             # I should change this to evaluating the required charge based on the batt_level matrix, to keep self-consistent
             expected_values[:,-1] = np.linspace(batt.effective_cap,0,DP_inc+1)/batt.eta_charge*np.max(t.e_prices_no_tier) #this should be checked, after removal of buffer rows
             
+            # option_indicies is a map of the indicies corresponding to the 
+            # possible points within the expected_value matrix that that state 
+            # can reach.
             # Each row is the set of options for a single battery state
-            # Each column is an index corresponding to the possible points within the expected_value matrix that that state can reach
             option_indicies = np.zeros((DP_inc+1, batt_charge_limits_len), int)
             option_indicies[:,:] = range(batt_charge_limits_len)
             for n in range(DP_inc+1):
                 option_indicies[n,:] += n - batt_discharge_limit
-            option_indicies = (option_indicies>0) * option_indicies # have not checked this default of pointing towards zero
-            option_indicies = (option_indicies<DP_inc+1) * option_indicies
-            
-            net_loads = np.zeros((DP_inc+1, batt_charge_limits_len), float)
-            costs_to_go = np.zeros((DP_inc+1, batt_charge_limits_len), float)
-            
+            option_indicies[option_indicies<0] = 0 # Cannot discharge below "empty"
+            option_indicies[option_indicies>DP_inc] = DP_inc # Cannot charge above "full"
             
             ###################################################################
             ############### Dynamic Programming Energy Trajectory #############
@@ -231,11 +219,8 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                 # Columns are options for where this particular battery state could go to
                 # Index is hour+1 because the DP decisions are on a given hour, looking ahead to the next hour. 
             
-                # this is beginning of a quicker approach to just adjust the base matrix
-                #change_in_batt_level_matrix2 = base_change_in_batt_level_matrix + batt_act_cumsum_mod[hour+1] - batt_act_cumsum_mod[hour]
-                
                 # this is just an inefficient but obvious way to assembled this matrix. It should be possible in a few quicker operations.
-                for row in range(batt_levels_n+1):
+                for row in range(DP_inc+1):
                     change_in_batt_level_matrix[row,:] = (-batt_levels[row,hour] + batt_levels_buffered[row:row+batt_charge_limits_len,hour+1])
                     
                 #Because of the 'illegal' values, neg_batt_bool shouldn't be necessary
