@@ -202,9 +202,9 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                     change_in_batt_level_matrix[row,:] = (-batt_levels[row,hour] + batt_levels_buffered[row:row+batt_charge_limits_len,hour+1])
                     
                 #Because of the 'illegal' values, neg_batt_bool shouldn't be necessary
-#                resulting_batt_level = change_in_batt_level_matrix + batt_levels[:,hour].reshape(DP_inc+1,1) # This are likely not necessary because options are restricted
+                resulting_batt_level = change_in_batt_level_matrix + batt_levels[:,hour].reshape(DP_inc+1,1) # This are likely not necessary because options are restricted
 #                neg_batt_bool = resulting_batt_level<0 # This are likely not necessary because options are restricted
-#                overfilled_batt_bool = resulting_batt_level>batt.effective_cap # This are likely not necessary because options are restricted
+                overfilled_batt_bool = resulting_batt_level>batt.effective_cap # This are likely not necessary because options are restricted
                                 
                 charging_bool = change_in_batt_level_matrix>0
                 discharging_bool = change_in_batt_level_matrix<0
@@ -225,7 +225,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
                 
                 # Make the incremental cost of impossible/illegal movements very high
 #                costs_to_go += neg_batt_bool * illegal # This are likely not necessary because options are restricted
-#                costs_to_go += overfilled_batt_bool * illegal # This are likely not necessary because options are restricted
+                costs_to_go += overfilled_batt_bool * illegal # This are likely not necessary because options are restricted
                 demand_limit_exceeded_bool = net_loads>demand_max_profile[hour+1]
                 costs_to_go += demand_limit_exceeded_bool * illegal
                 
@@ -266,6 +266,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             # charges are not calculated in the dispatch
             bill_under_dispatch, _ = tFuncs.bill_calculator(opt_load_traj, t, export_tariff)
             demand_max_exceeded = np.any(opt_load_traj[1:] > demand_max_profile[1:])
+        
         
         #=====================================================================#
         ##################### Estimate Bill Savings ###########################
