@@ -74,7 +74,6 @@ def cashflow_constructor(bill_savings,
     if np.size(itc) != n_agents or n_agents==1: itc = np.repeat(itc, n_agents) 
     if np.size(pv_size) != n_agents or n_agents==1: pv_size = np.repeat(pv_size, n_agents) 
     if np.size(pv_price) != n_agents or n_agents==1: pv_price = np.repeat(pv_price, n_agents) 
-    if np.size(inverter_price) != n_agents or n_agents==1: inverter_price = np.repeat(inverter_price, n_agents) 
     if np.size(pv_om) != n_agents or n_agents==1: pv_om = np.repeat(pv_om, n_agents) 
     if np.size(batt_cap) != n_agents or n_agents==1: batt_cap = np.repeat(batt_cap, n_agents) 
     if np.size(batt_power) != n_agents or n_agents==1: batt_power = np.repeat(batt_power, n_agents) 
@@ -121,28 +120,20 @@ def cashflow_constructor(bill_savings,
     up_front_cost = net_installed_cost * down_payment_fraction
     cf[:,0] -= up_front_cost
     
-    #################### Replacements #########################################
-    inv_replacement_cf = np.zeros(shape)
-    
-    # Inverter replacements
-    inv_replacement_cf[:,10] -= pv_size * inverter_price # assume a single inverter replacement at year 10
-    
-    # Adjust for inflation
-    inv_replacement_cf = inv_replacement_cf*inflation_adjustment
-
-    cf += inv_replacement_cf
     
     #################### Operating Expenses ###################################
-    # Nominally includes O&M, fuel, insurance, and property tax - although 
-    # currently only includes O&M.
+    # Nominally includes O&M, replacement costs, fuel, insurance, and property 
+    # tax - although currently only includes O&M and replacements.
     # All operating expenses increase with inflation
     operating_expenses_cf = np.zeros(shape)
     batt_om_cf = np.zeros(shape)
 
-    # Battery replacement through O&M
+    # Battery O&M (replacement costs added to base O&M when costs were ingested)
     batt_om_cf[:,1:] = (batt_power*batt_om_per_kw + batt_cap*batt_om_per_kwh).reshape(n_agents, 1)
     
+    # PV O&M
     operating_expenses_cf[:,1:] = (pv_om * pv_size).reshape(n_agents, 1)
+    
     operating_expenses_cf += batt_om_cf
     operating_expenses_cf = operating_expenses_cf*inflation_adjustment
     cf -= operating_expenses_cf
@@ -253,7 +244,6 @@ def cashflow_constructor(bill_savings,
                'batt_cost':batt_cost,
                'installed_cost':installed_cost,
                'up_front_cost':up_front_cost,
-               'inv_replacement':inv_replacement_cf,
                'batt_om_cf':batt_om_cf,              
                'operating_expenses':operating_expenses_cf,
                'pv_itc_value':pv_itc_value,
