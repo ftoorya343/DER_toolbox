@@ -10,7 +10,7 @@ import numpy as np
 
 #%%
 def cashflow_constructor(bill_savings, 
-                         pv_size, pv_price, inverter_price, pv_om,
+                         pv_size, pv_price, pv_om,
                          batt_cap, batt_power, 
                          batt_cost_per_kw, batt_cost_per_kwh, 
                          batt_om_per_kw, batt_om_per_kwh,
