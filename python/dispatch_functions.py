@@ -128,10 +128,18 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             batt_actions_to_achieve_demand_max = np.zeros(len(load_profile), float)
             batt_actions_to_achieve_demand_max[1:-1] = batt_level_profile[1:-1] - batt_level_profile[0:-2]
             
-            batt_act_cumsum_mod_rev = np.mod(np.cumsum(batt_actions_to_achieve_demand_max[np.arange(8759,-1,-1)])[np.arange(8759,-1,-1)], DP_res)
+            batt_actions_to_achieve_demand_max = np.zeros(len(load_profile), float)
+            batt_actions_to_achieve_demand_max[1:] = batt_level_profile[1:] - batt_level_profile[0:-1]
+            
+            # Calculate the reverse cumsum, then mod the result by the resolution of the battery discretization
+            batt_act_rev_cumsum = np.cumsum(batt_actions_to_achieve_demand_max[np.arange(8759,-1,-1)])[np.arange(8759,-1,-1)]
+            batt_act_rev_cumsum += batt.effective_cap - batt_level_profile[-1]
+            batt_act_rev_cumsum_mod = np.mod(batt_act_rev_cumsum, DP_res)
+                        
                 
             # batt_x_limits are the number of rows that the battery energy 
-            # level can move in a single step. Casting a wide net, and doing a 
+            # level can move in a single step. The actual range exceeds what is
+            # possible (due to discretization), but will be restricted by a 
             # pass/fail test later on with cost-to-go.
             batt_charge_limit = int(batt.effective_power*batt.eta_charge/DP_res) + 1
             batt_discharge_limit = int(batt.effective_power/batt.eta_discharge/DP_res) + 1
@@ -140,7 +148,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
             
             batt_levels = np.zeros([DP_inc+1,8760], float)
             batt_levels[1:,:] = np.linspace(0,batt.effective_cap,DP_inc, float).reshape(DP_inc,1)
-            batt_levels[1:,:-1] = batt_levels[1:,:-1] + (DP_res - batt_act_cumsum_mod_rev[1:].reshape(1,8759)) # Shift each column's values, such that the DP can always find a way through
+            batt_levels[1:,:-1] = batt_levels[1:,:-1] + (DP_res - batt_act_rev_cumsum_mod[1:].reshape(1,8759)) # Shift each column's values, such that the DP can always find a way through
             batt_levels[0,:] = 0.0 # The battery always has the option of being empty
             batt_levels[-1,:] = batt.effective_cap # The battery always has the option of being full
             
@@ -294,6 +302,7 @@ def determine_optimal_dispatch(load_profile, pv_profile, batt, t, export_tariff,
     #=========================================================================#
     ########################### Package Results ###############################
     #=========================================================================#
+    
     
     results = {'load_profile_under_dispatch':opt_load_traj,
                'bill_under_dispatch':bill_under_dispatch,
