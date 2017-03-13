@@ -40,7 +40,7 @@ if download_tariffs_for_a_utility:
 # templates_and_master_lists folder into your working directory, rename it,
 # and look through the list to determine which of them you may not want to
 # filter by for your analysis.
-keyword_list_file = 'keyword_list_for_tariff_exclusion.csv'
+keyword_list_file = 'example_keyword_list_for_tariff_exclusion.csv'
 
 # filter_tariff_df applies the keyword filters to the tariff names, as well
 # as filtering by the unit type and whether the tariff is expired.

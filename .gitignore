@@ -1,2 +1,3 @@
 *.pyc
 agent_df*.pkl
+config*.json
